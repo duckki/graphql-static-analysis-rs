@@ -1,0 +1,9 @@
+[package]
+name = "graphql-static-analysis-benchmark"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+apollo-compiler = "1.32.0"
+graphql-static-analysis = { path = ".." }

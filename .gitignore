@@ -1,0 +1,9 @@
+/target/
+Cargo.lock
+!benchmarks/Cargo.lock
+benchmarks/target/
+benchmarks/__pycache__/
+.scratch/
+/fuzz/artifacts/
+/fuzz/coverage/
+/fuzz/target/

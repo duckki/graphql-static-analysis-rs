@@ -1,0 +1,36 @@
+[package]
+name = "graphql-static-analysis-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+rust-version = "1.85"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+apollo-compiler = "1.32.0"
+graphql-static-analysis = { path = ".." }
+libfuzzer-sys = "0.4"
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "rust_only"
+path = "fuzz_targets/rust_only.rs"
+test = false
+doc = false
+
+[[example]]
+name = "differential"
+path = "runners/differential.rs"
+
+[[example]]
+name = "generate_coverage_corpus"
+path = "runners/generate_coverage_corpus.rs"
