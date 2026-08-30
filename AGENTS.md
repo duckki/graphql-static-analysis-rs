@@ -47,8 +47,8 @@
 - Read [`docs/release-engineering.md`](docs/release-engineering.md) before changing
   package metadata or versions, publishing the crate, or creating release tags. It is
   the canonical release procedure.
-- Keep releases manual until the repository has a concrete need for automated
-  publishing. Validate and inspect the package from a clean release commit before
-  uploading it.
-- Never use `--allow-dirty` for an actual release. Do not run `cargo publish`, push a
-  release tag, or create a GitHub release without an explicit user request.
+- Publish through `.github/workflows/publish.yml` using crates.io trusted publishing.
+  Validate and inspect the package from a clean release commit before creating the
+  release tag.
+- Never use `--allow-dirty` for an actual release. Do not run `cargo publish` locally,
+  push a release tag, or create a GitHub release without an explicit user request.

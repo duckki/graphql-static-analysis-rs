@@ -1,11 +1,13 @@
 # Release engineering
 
-This repository uses a simple, manual release process for
+This repository uses a simple, maintainer-triggered release process for
 [`graphql-static-analysis`](https://crates.io/crates/graphql-static-analysis).
 [GitHub](https://github.com/duckki/graphql-static-analysis-rs) is the canonical source
 repository, crates.io distributes releases, and docs.rs builds the published API
-documentation. Automated publishing can be added later if the release frequency or
-number of maintainers makes it worthwhile.
+documentation. Publishing a GitHub release runs
+[`publish.yml`](../.github/workflows/publish.yml), which authenticates to crates.io
+through OpenID Connect (OIDC) trusted publishing. The repository does not store a
+long-lived crates.io token.
 
 Publishing a crate version is effectively permanent: crates.io does not allow an
 uploaded version to be replaced. Run every check below from the repository root,
@@ -58,29 +60,61 @@ consumer-facing documentation. It must not contain fuzzing artifacts, benchmarks
 internal release or performance notes, repository automation, secrets, or generated
 scratch files.
 
+## One-time trusted-publisher setup
+
+The crate must already exist on crates.io before trusted publishing can be configured.
+As a crate owner, follow the
+[crates.io trusted-publishing setup](https://crates.io/docs/trusted-publishing): open
+the crate's **Settings** page, add a GitHub Actions trusted publisher, and enter these
+values exactly:
+
+- Owner: `duckki`
+- Repository: `graphql-static-analysis-rs`
+- Workflow: `publish.yml`
+- Environment: `release`
+
+In the GitHub repository settings, create an environment named `release`. Allow
+deployments from `main` and release tags such as `v*`, and add any desired approval
+protection. The environment name in GitHub, crates.io, and the workflow must match
+exactly.
+
+The publish job has `id-token: write` permission only so it can request a GitHub OIDC
+identity token. The official
+[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action)
+exchanges that identity for a short-lived crates.io token and revokes the token when
+the job finishes. Do not add a `CARGO_REGISTRY_TOKEN` repository secret.
+
+After one successful trusted publication, consider enabling **Require trusted
+publishing for all new versions** in the crate's crates.io settings.
+
+Before creating the first release, manually run the **Publish** workflow from `main`.
+A manual run performs all release checks and completes the trusted-publishing token
+exchange, but its publish step is disabled. A successful run confirms the crates.io
+configuration without uploading a version.
+
 ## Publish
 
-The maintainer performing the release must be authenticated with crates.io. The first
-publisher creates the crate and becomes its initial owner; subsequent publishers must
-already have owner access. From the clean, validated release commit, publish once:
+Create and push an annotated tag from the clean release commit:
 
 ```sh
-cargo publish
+VERSION=X.Y.Z
+git tag -a "v${VERSION}" -m "graphql-static-analysis ${VERSION}"
+git push origin "v${VERSION}"
 ```
 
-For an agent-assisted release, `cargo publish` and the Git tag push require an
-explicit user request. A dry run does not authorize uploading the crate.
+Replace `X.Y.Z` with the release version. Create and publish a GitHub release from the
+existing tag with a concise summary of user-visible changes. Publishing the GitHub
+release triggers the workflow, which verifies that the tag matches `Cargo.toml`, that
+the tagged commit is on `main`, and that all release checks pass before it uploads the
+crate.
 
-After publication succeeds, create and push an annotated tag matching the crate
-version:
+For an agent-assisted release, pushing the tag and publishing the GitHub release
+require an explicit user request. Do not run `cargo publish` locally for an actual
+release.
 
-```sh
-git tag -a v0.1.0 -m "graphql-static-analysis 0.1.0"
-git push origin v0.1.0
-```
-
-Replace `0.1.0` with the released version. Then create a GitHub release from that
-tag with a concise summary of user-visible changes.
+If the workflow fails before upload, fix the cause and rerun the same workflow. Do not
+move or replace the release tag. If Cargo reports a timeout or another ambiguous result,
+check crates.io before rerunning because the upload may have succeeded.
 
 ## Verify the release
 
@@ -90,8 +124,8 @@ Confirm all three public surfaces:
   version and repository metadata.
 - [docs.rs](https://docs.rs/graphql-static-analysis) successfully builds that
   version.
-- `cargo info graphql-static-analysis@0.1.0` resolves the published crate (using the
-  released version in place of `0.1.0`).
+- `cargo info graphql-static-analysis@X.Y.Z` resolves the published crate (using the
+  release version in place of `X.Y.Z`).
 
 If a published version is broken, do not move or reuse its tag and do not try to
 replace the upload. Yank it with
