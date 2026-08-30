@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::fs;
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
@@ -7,6 +9,7 @@ use apollo_compiler::{ExecutableDocument, Schema};
 use graphql_static_analysis::cost::{CostEstimator, CostModel};
 use graphql_static_analysis::max_response_size::MaxResponseSizeEstimator;
 use graphql_static_analysis::AnalysisMode;
+use serde::Deserialize;
 
 const ABSTRACT_TYPE_COUNT: usize = 80;
 const LIST_SIZE: u64 = 10;
@@ -74,13 +77,104 @@ struct Scenario {
     variables: JsonMap,
 }
 
+#[derive(Deserialize)]
+struct StudyCorpus {
+    #[serde(default)]
+    schemas: BTreeMap<String, String>,
+    cases: Vec<StudyCase>,
+}
+
+#[derive(Deserialize)]
+struct StudyCase {
+    id: String,
+    schema: String,
+    query: String,
+    variables: JsonMap,
+}
+
+fn run_study(path: &str) {
+    let corpus: StudyCorpus =
+        serde_json::from_str(&fs::read_to_string(path).expect("read study corpus"))
+            .expect("parse study corpus");
+    for test_case in corpus.cases {
+        let schema_source = corpus
+            .schemas
+            .get(&test_case.schema)
+            .unwrap_or(&test_case.schema);
+        for backend in [Backend::ExactCase, Backend::Syntactic] {
+            let result = (|| {
+                let schema = Schema::parse_and_validate(schema_source, "study-schema.graphql")
+                    .map_err(|error| format!("schema: {error:?}"))?;
+                let document = ExecutableDocument::parse_and_validate(
+                    &schema,
+                    &test_case.query,
+                    "study-query.graphql",
+                )
+                .map_err(|error| format!("query: {error:?}"))?;
+                let schema = schema.into_inner();
+                let document = document.into_inner();
+                let operation = document
+                    .operations
+                    .iter()
+                    .next()
+                    .ok_or_else(|| "query has no operation".to_string())?;
+                let model = CostModel::from_schema(&schema)
+                    .map_err(|error| format!("cost model: {error}"))?;
+                CostEstimator::new(model)
+                    .mode(backend.mode())
+                    .estimate(&document, operation, &test_case.variables)
+                    .map_err(|error| format!("estimate: {error}"))
+            })();
+            let system = format!("graphql-static-analysis-rs-{}", backend.name());
+            match result {
+                Ok(cost) => println!(
+                    "{}",
+                    serde_json::json!({
+                        "system": system,
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "case": test_case.id,
+                        "status": "ok",
+                        "type_cost": cost.type_cost,
+                        "field_cost": cost.field_cost,
+                    })
+                ),
+                Err(error) => println!(
+                    "{}",
+                    serde_json::json!({
+                        "system": system,
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "case": test_case.id,
+                        "status": "error",
+                        "error": error,
+                    })
+                ),
+            }
+        }
+    }
+}
+
 fn schema_sdl_with_topology(
     object_count: usize,
     abstract_type_count: usize,
     incidences_per_object: usize,
 ) -> String {
-    assert!(abstract_type_count > 0);
-    assert!(incidences_per_object > 0 && incidences_per_object <= abstract_type_count);
+    schema_sdl_with_declared_topology(
+        object_count,
+        abstract_type_count,
+        abstract_type_count,
+        incidences_per_object,
+    )
+}
+
+fn schema_sdl_with_declared_topology(
+    object_count: usize,
+    declared_abstract_type_count: usize,
+    membership_abstract_type_count: usize,
+    incidences_per_object: usize,
+) -> String {
+    assert!(declared_abstract_type_count >= membership_abstract_type_count);
+    assert!(membership_abstract_type_count > 0);
+    assert!(incidences_per_object > 0 && incidences_per_object <= membership_abstract_type_count);
     let mut output = String::from(
         r#"
 directive @cost(weight: String!)
@@ -92,7 +186,7 @@ type Query { nodes: [Node] }
 interface Node { id: ID! }
 "#,
     );
-    for index in 0..abstract_type_count {
+    for index in 0..declared_abstract_type_count {
         output.push_str(&format!(
             r#"
 interface NodeSubset{index} implements Node {{
@@ -105,7 +199,12 @@ interface NodeSubset{index} implements Node {{
     }
     for index in 0..object_count {
         let interfaces = (0..incidences_per_object)
-            .map(|offset| format!("NodeSubset{}", (index + offset) % abstract_type_count))
+            .map(|offset| {
+                format!(
+                    "NodeSubset{}",
+                    (index + offset) % membership_abstract_type_count
+                )
+            })
             .collect::<Vec<_>>()
             .join(" & ");
         output.push_str(&format!(
@@ -155,6 +254,44 @@ fn scenario_with_topology(
     assert!(query_spreads <= abstract_type_count);
     let schema = Schema::parse_and_validate(
         schema_sdl_with_topology(object_count, abstract_type_count, incidences_per_object),
+        "benchmark-schema.graphql",
+    )
+    .unwrap();
+    let document = ExecutableDocument::parse_and_validate(
+        &schema,
+        operation_source(query_spreads),
+        "benchmark-query.graphql",
+    )
+    .unwrap();
+    let variables = json!({
+        "includeBranch": true,
+        "skipBranch": true,
+    })
+    .as_object()
+    .unwrap()
+    .clone();
+    Scenario {
+        schema: schema.into_inner(),
+        document: document.into_inner(),
+        variables,
+    }
+}
+
+fn scenario_with_unused_abstract_types(
+    object_count: usize,
+    declared_abstract_type_count: usize,
+    membership_abstract_type_count: usize,
+    incidences_per_object: usize,
+    query_spreads: usize,
+) -> Scenario {
+    assert!(query_spreads <= membership_abstract_type_count);
+    let schema = Schema::parse_and_validate(
+        schema_sdl_with_declared_topology(
+            object_count,
+            declared_abstract_type_count,
+            membership_abstract_type_count,
+            incidences_per_object,
+        ),
         "benchmark-schema.graphql",
     )
     .unwrap();
@@ -589,6 +726,10 @@ fn profile_pathological_booleans(
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
+    if args.get(1).map(String::as_str) == Some("study") {
+        run_study(&args[2]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("profile") {
         profile(
             args[2].parse().unwrap(),
@@ -646,6 +787,34 @@ fn main() {
             &scenario,
             object_count,
             abstract_type_count,
+            incidences_per_object,
+            query_spreads,
+            backend,
+            None,
+        );
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("cost-unused-abstract-point") {
+        let object_count = args[2].parse().unwrap();
+        let declared_abstract_type_count = args[3].parse().unwrap();
+        let membership_abstract_type_count = args[4].parse().unwrap();
+        let incidences_per_object = args[5].parse().unwrap();
+        let query_spreads = args[6].parse().unwrap();
+        let backend = Backend::parse(&args[7]);
+        println!(
+            "backend,object_types,abstract_types,incidences_per_object,query_spreads,type_cost,field_cost,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
+        );
+        let scenario = scenario_with_unused_abstract_types(
+            object_count,
+            declared_abstract_type_count,
+            membership_abstract_type_count,
+            incidences_per_object,
+            query_spreads,
+        );
+        benchmark_cost(
+            &scenario,
+            object_count,
+            declared_abstract_type_count,
             incidences_per_object,
             query_spreads,
             backend,

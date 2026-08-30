@@ -37,7 +37,11 @@ def plan(replicates: int) -> list[tuple[int, str, int, str]]:
     for replicate in range(replicates):
         for backend in BACKENDS:
             points.extend(
-                (replicate, "abstract-types", value, backend)
+                (replicate, "abstract-partition-count", value, backend)
+                for value in ABSTRACT_POINTS
+            )
+            points.extend(
+                (replicate, "unused-abstract-types", value, backend)
                 for value in ABSTRACT_POINTS
             )
             points.extend(
@@ -56,10 +60,15 @@ def plan(replicates: int) -> list[tuple[int, str, int, str]]:
 
 
 def run_point(binary: Path, dimension: str, value: int, backend: str) -> dict[str, str]:
-    if dimension == "abstract-types":
+    if dimension == "abstract-partition-count":
         command = [
             str(binary), "cost-topology-point", "1024", str(value),
             str(min(4, value)), "8", backend,
+        ]
+    elif dimension == "unused-abstract-types":
+        command = [
+            str(binary), "cost-unused-abstract-point", "1024", str(value),
+            "8", "4", "8", backend,
         ]
     elif dimension == "incidences-per-object":
         command = [
@@ -141,7 +150,8 @@ def main() -> None:
         arguments.replicates,
     )
     details["dimensions"] = {
-        "abstract_types": ABSTRACT_POINTS,
+        "abstract_partition_count": ABSTRACT_POINTS,
+        "unused_abstract_types": ABSTRACT_POINTS,
         "incidences_per_object": INCIDENCE_POINTS,
         "nesting_depth": STRUCTURE_POINTS,
         "response_fan_in": STRUCTURE_POINTS,

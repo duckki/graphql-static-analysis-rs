@@ -105,7 +105,7 @@ candidate in alternating order to avoid a systematic thermal or scheduling advan
 For a decision based on small differences, run each axis in three fresh processes and
 use a pointwise median before comparing against this single-process baseline.
 
-## Reusable IBM-cost campaign after the current optimization
+## Reusable IBM-cost development campaign after the current optimization
 
 The reusable `CostEstimator` boundary was measured on 2026-08-29 at revision
 `c3f92a8c25bf3a0f1356595b74f7c92306cc9b30`. The harness changes were uncommitted;
@@ -133,3 +133,39 @@ Archive the Git revision and status, `rustc -Vv`, `cargo -V`, CPU and operating-
 details, CSV files, and profiler artifacts. Report same-host ratios and scaling
 exponents rather than absolute timings across machines. Update this document only
 with a fully identified run.
+
+## Ten-replicate publication-candidate campaign
+
+The primary campaign was rerun from clean harness revision
+`6dbb41c0bec719f8a896777fbd13bd081af0387b` on 2026-08-29. It retains five samples for
+each of ten randomized fresh-process replicates per point. The corrected secondary,
+generated-corpus, and allocation adapters are committed in this repository at
+`ceb34382d0f9bbddf55ad274933b90b59b1d3bd6`; the primary timings retain the earlier
+clean-revision provenance above.
+
+| Axis | Backend | Small endpoint | Large endpoint | Empirical `p` | Hierarchical-bootstrap 95% CI | `R²` |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Query size, 8→80 spreads | ExactCase | 29.0 µs | 257.5 µs | 0.954 | [0.944, 0.960] | 1.000 |
+| Query size, 8→80 spreads | Syntactic | 28.4 µs | 254.1 µs | 0.959 | [0.950, 0.968] | 1.000 |
+| Schema size, 1,024→10,240 objects | ExactCase | 29.2 µs | 242.3 µs | 0.934 | [0.924, 0.939] | 0.999 |
+| Schema size, 1,024→10,240 objects | Syntactic | 28.5 µs | 230.5 µs | 0.910 | [0.901, 0.923] | 1.000 |
+
+The corrected ten-replicate secondary campaign distinguishes abstract partitioning
+from unused schema declarations. With the queried memberships fixed, increasing unused
+abstract definitions from 8 to 80 is flat (`p = -0.007`, CI `[-0.016, 0.012]`
+ExactCase; `p = -0.001`, CI `[-0.017, 0.010]` Syntactic). Redistributing the same
+objects over 8→80 partitions reduces possible objects per queried spread and therefore
+reduces runtime (`p = -0.782` and `-0.775`). Incidence-density exponents are 0.391 and
+0.419; nesting-depth exponents are 0.721 and 0.718; response-fan-in exponents are 0.175
+and 0.190.
+
+The separate counting-allocator binary reports 696,432 retained counted bytes for
+`CostModel` plus `CostEstimator` at 1,024 objects and 17,896,560 at 10,240 objects on
+this topology. Per-estimate allocations are transient (`net_bytes = 0` at return).
+Schema/query parsing, allocator metadata, and stack memory are excluded.
+
+The complete primary and secondary CSVs, generated-corpus JSONL, allocation CSV, and
+SHA-256 manifest are archived by the companion `graphql-lean` study artifact at
+commit `fd4e0ab9b99665ad29a1a95042b7a97a6e498f45` under
+`Benchmarks/StaticCostStudy/results/publication-candidate-20260829/`. That squashed
+commit is the snapshot selected for tagging and persistent archival.

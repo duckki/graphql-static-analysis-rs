@@ -28,12 +28,14 @@ commands isolate the production estimator boundary used by callers. ExactCase re
 type/field cost `2/2`; Syntactic returns `2/3` on this deliberately distinguishing
 family.
 
-Secondary `cost-topology-point` and `cost-structure-point` commands vary the
-information hidden by those fixed values: number of abstract types, possible-type
-incidences per object (overlap density), nesting depth, and repeated response-name
-fan-in. `multivariate_campaign.py` runs those four dimensions in randomized fresh
-processes. They are reported separately from the two primary axes so changing one
-topology parameter never silently changes the definition of “schema size.”
+Secondary `cost-topology-point`, `cost-unused-abstract-point`, and
+`cost-structure-point` commands vary the information hidden by those fixed values:
+abstract partition count, unrelated declared abstract types with queried memberships
+fixed, possible-type incidences per object (overlap density), nesting depth, and
+repeated response-name fan-in. `multivariate_campaign.py` runs those five dimensions in
+randomized fresh processes. They are reported separately from the two primary axes so
+changing one topology parameter never silently changes the definition of “schema
+size.”
 
 Each configuration warms up twice, calibrates a power-of-two iteration count to a
 100 ms sample, records five samples, and emits every sample plus the median total time
@@ -76,7 +78,23 @@ Individual secondary points are also available for profiling and smoke tests:
 target/release/graphql-static-analysis-benchmark \
   cost-topology-point OBJECTS ABSTRACT_TYPES INCIDENCES SPREADS BACKEND
 target/release/graphql-static-analysis-benchmark \
+  cost-unused-abstract-point OBJECTS DECLARED_ABSTRACT_TYPES \
+  MEMBERSHIP_ABSTRACT_TYPES INCIDENCES SPREADS BACKEND
+target/release/graphql-static-analysis-benchmark \
   cost-structure-point NESTING_DEPTH RESPONSE_FAN_IN BACKEND
+```
+
+The main binary also runs an inline-schema JSON corpus through both IBM analysis modes:
+
+```text
+target/release/graphql-static-analysis-benchmark study GENERATED_CORPUS.json
+```
+
+Build and run the separate counting-allocator binary to record `CostModel`,
+`CostEstimator`, and per-estimate heap activity without changing the timed binary:
+
+```text
+target/release/cost_allocations
 ```
 
 On the initial build, use `cargo build --release` if a lockfile has not been created
