@@ -3,6 +3,7 @@ use std::hint::black_box;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use apollo_compiler::response::serde_json_bytes::json;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, Schema};
 use graphql_static_analysis::cost::{CostEstimator, CostModel};
 use graphql_static_analysis::AnalysisMode;
@@ -145,7 +146,7 @@ fn measure_point(object_count: usize, query_spreads: usize, mode: AnalysisMode, 
     let before_estimate = Snapshot::now();
     let cost = black_box(
         estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, Valid::assume_valid_ref(&variables))
             .expect("cost estimate"),
     );
     let estimate_allocations = Snapshot::now().since(before_estimate);

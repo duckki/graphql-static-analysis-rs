@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use apollo_compiler::response::serde_json_bytes::json;
 use apollo_compiler::response::JsonMap;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, Schema};
 use graphql_static_analysis::cost::{CostEstimator, CostModel};
 use graphql_static_analysis::max_response_size::MaxResponseSizeEstimator;
@@ -122,7 +123,11 @@ fn run_study(path: &str) {
                     .map_err(|error| format!("cost model: {error}"))?;
                 CostEstimator::new(model)
                     .mode(backend.mode())
-                    .estimate(&document, operation, &test_case.variables)
+                    .estimate(
+                        &document,
+                        operation,
+                        Valid::assume_valid_ref(&test_case.variables),
+                    )
                     .map_err(|error| format!("estimate: {error}"))
             })();
             let system = format!("graphql-static-analysis-rs-{}", backend.name());
@@ -411,7 +416,7 @@ fn estimate(
     let operation = scenario.document.operations.get(Some("Benchmark")).unwrap();
     let variables = match variable_input {
         VariableInput::Unknown => None,
-        VariableInput::Supplied => Some(&scenario.variables),
+        VariableInput::Supplied => Some(Valid::assume_valid_ref(&scenario.variables)),
     };
     estimator
         .estimate(&scenario.document, operation, LIST_SIZE, variables)
@@ -555,7 +560,11 @@ fn benchmark_pathological_booleans(
 fn estimate_cost(scenario: &Scenario, estimator: &CostEstimator<'_>) -> (f64, f64) {
     let operation = scenario.document.operations.get(Some("Benchmark")).unwrap();
     let cost = estimator
-        .estimate(&scenario.document, operation, &scenario.variables)
+        .estimate(
+            &scenario.document,
+            operation,
+            Valid::assume_valid_ref(&scenario.variables),
+        )
         .unwrap();
     (cost.type_cost, cost.field_cost)
 }

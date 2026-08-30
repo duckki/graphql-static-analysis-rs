@@ -31,6 +31,7 @@ nested level. Simultaneous fields add, while alternatives take their maximum:
 
 ```rust,ignore
 use apollo_compiler::response::JsonMap;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::{ExecutableDocument, Schema};
 use graphql_static_analysis::{
     Algebra, AnalysisMode, Analyzer, CollectedFieldGroup,
@@ -65,7 +66,7 @@ impl Algebra for FieldCount {
 fn analyze(
     schema: &Schema,
     document: &ExecutableDocument,
-    variables: &JsonMap,
+    variables: &Valid<JsonMap>,
 ) -> Result<(u64, u64), graphql_static_analysis::AnalysisError> {
     let operation = document.operations.iter().next().expect("one operation");
     let analyzer = Analyzer::new(schema);
@@ -90,8 +91,8 @@ result is appropriate.
 
 ## Analyses that require variables
 
-If `field` needs concrete argument values, keep the coerced `JsonMap` in the algebra
-and declare the requirement:
+If `field` needs concrete argument values, borrow the underlying `JsonMap` from the
+`Valid<JsonMap>` in the algebra and declare the requirement:
 
 ```rust,ignore
 fn requires_variables(&self) -> bool {
@@ -99,10 +100,10 @@ fn requires_variables(&self) -> bool {
 }
 ```
 
-Then configure the operation with `.variable_values(&variables)` before calling
+Then configure the operation with `.variable_values(variables)` before calling
 `analyze`. The engine returns `AnalysisError::VariablesRequired` when the map is
-missing. Operation defaults are applied by the engine for variables absent from a
-supplied map.
+missing. Obtain the `Valid<JsonMap>` by coercing the request variables with Apollo
+Compiler before starting the analysis.
 
 ## Soundness expectations
 

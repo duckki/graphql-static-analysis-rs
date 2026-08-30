@@ -13,6 +13,7 @@ use apollo_compiler::ast::Type;
 use apollo_compiler::executable::ExecutableDocument;
 use apollo_compiler::executable::Operation;
 use apollo_compiler::response::JsonMap;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::Schema;
 
 /// Reusable maximum-response-size estimator for one schema.
@@ -53,7 +54,7 @@ impl<'schema> MaxResponseSizeEstimator<'schema> {
         document: &'analysis ExecutableDocument,
         operation: &'analysis Operation,
         list_size: u64,
-        variable_values: Option<&'analysis JsonMap>,
+        variable_values: Option<&'analysis Valid<JsonMap>>,
     ) -> Result<u64, AnalysisError> {
         let algebra = MaxResponseSizeAlgebra {
             schema: self.analyzer.schema(),
@@ -78,7 +79,7 @@ pub fn estimate(
     operation: &Operation,
     mode: AnalysisMode,
     list_size: u64,
-    variable_values: Option<&JsonMap>,
+    variable_values: Option<&Valid<JsonMap>>,
 ) -> Result<u64, AnalysisError> {
     MaxResponseSizeEstimator::new(schema).mode(mode).estimate(
         document,
@@ -167,7 +168,12 @@ mod tests {
         let operation = document.operations.iter().next().unwrap();
         MaxResponseSizeEstimator::new(&schema)
             .mode(mode)
-            .estimate(&document, operation, list_size, variables)
+            .estimate(
+                &document,
+                operation,
+                list_size,
+                variables.map(Valid::assume_valid_ref),
+            )
             .unwrap()
     }
 

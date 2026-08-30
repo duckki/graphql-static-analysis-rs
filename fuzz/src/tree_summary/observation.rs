@@ -5,6 +5,7 @@ use super::operation::variable_values;
 use super::operation::SCHEMA;
 use super::TreeSummaryInput;
 use apollo_compiler::response::JsonMap;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::ExecutableDocument;
 use apollo_compiler::Schema;
 use graphql_static_analysis::cost::CostEstimator;
@@ -59,7 +60,7 @@ impl TreeSummaryInput {
                         &document,
                         operation,
                         u64::from(self.list_size),
-                        variables.as_ref(),
+                        variables.as_ref().map(Valid::assume_valid_ref),
                     )
                     .expect("maximum response-size analysis");
                 format!("max:{result}")
@@ -114,7 +115,7 @@ impl TreeSummaryInput {
         let cost = CostEstimator::new(model)
             .mode(mode)
             .default_list_size(u64::from(self.list_size))
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, Valid::assume_valid_ref(&variables))
             .expect("IBM cost analysis");
         (cost.type_cost, cost.field_cost)
     }
@@ -131,7 +132,9 @@ fn analyze<A: Algebra>(
     let analyzer = Analyzer::new(schema);
     let analysis = analyzer.operation(document, operation).mode(mode);
     match variables {
-        Some(values) => analysis.variable_values(values).analyze(algebra),
+        Some(values) => analysis
+            .variable_values(Valid::assume_valid_ref(values))
+            .analyze(algebra),
         None => analysis.analyze(algebra),
     }
     .expect("TreeSummary analysis")

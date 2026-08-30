@@ -1,3 +1,4 @@
+use apollo_compiler::request::coerce_variable_values;
 use apollo_compiler::response::JsonMap;
 use apollo_compiler::ExecutableDocument;
 use apollo_compiler::Schema;
@@ -20,12 +21,12 @@ fn main() -> Result<(), graphql_static_analysis::cost::CostError> {
         "operation.graphql",
     )
     .expect("valid operation");
-    let schema = schema.into_inner();
-    let document = document.into_inner();
     let operation = document.operations.iter().next().expect("one operation");
+    let variables =
+        coerce_variable_values(&schema, operation, &JsonMap::new()).expect("valid variable values");
 
     let model = CostModel::from_schema(&schema)?;
-    let cost = CostEstimator::new(model).estimate(&document, operation, &JsonMap::new())?;
+    let cost = CostEstimator::new(model).estimate(&document, operation, &variables)?;
     println!(
         "type cost: {}, field cost: {}",
         cost.type_cost, cost.field_cost

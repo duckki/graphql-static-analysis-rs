@@ -19,6 +19,7 @@ use apollo_compiler::response::JsonMap;
 use apollo_compiler::response::JsonValue;
 use apollo_compiler::schema::ExtendedType;
 use apollo_compiler::schema::{self};
+use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Schema;
 use std::rc::Rc;
@@ -65,12 +66,12 @@ impl<'schema> CostEstimator<'schema> {
         &self,
         document: &ExecutableDocument,
         operation: &Operation,
-        variable_values: &JsonMap,
+        variable_values: &Valid<JsonMap>,
     ) -> Result<Cost, CostError> {
         let analysis = CostAlgebra {
             analyzer: &self.analyzer,
             operation,
-            variable_values,
+            variable_values: variable_values.as_ref(),
             model: &self.cost_model,
             default_list_size: self
                 .default_list_size
@@ -102,7 +103,7 @@ pub fn estimate(
     document: &ExecutableDocument,
     operation: &Operation,
     mode: AnalysisMode,
-    variable_values: &JsonMap,
+    variable_values: &Valid<JsonMap>,
 ) -> Result<Cost, CostError> {
     let estimator = CostEstimator::new(CostModel::from_schema(schema)?).mode(mode);
     estimator.estimate(document, operation, variable_values)
@@ -606,6 +607,10 @@ mod tests {
     use apollo_compiler::ExecutableDocument;
     use pretty_assertions::assert_eq;
 
+    fn valid(values: &JsonMap) -> &Valid<JsonMap> {
+        Valid::assume_valid_ref(values)
+    }
+
     const DIRECTIVES: &str = r#"
         directive @cost(weight: String!) on
           ARGUMENT_DEFINITION | ENUM | FIELD_DEFINITION |
@@ -698,7 +703,7 @@ mod tests {
         CostEstimator::new(CostModel::from_schema(&schema).unwrap())
             .mode(mode)
             .default_list_size(10)
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap()
     }
 
@@ -731,7 +736,7 @@ mod tests {
         CostEstimator::new(CostModel::from_schema(&schema).unwrap())
             .mode(mode)
             .default_list_size(10)
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap()
     }
 
@@ -758,7 +763,9 @@ mod tests {
         let variables = JsonMap::new();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
 
-        assert!(estimator.estimate(&document, operation, &variables).is_ok());
+        assert!(estimator
+            .estimate(&document, operation, valid(&variables))
+            .is_ok());
     }
 
     #[test]
@@ -1239,7 +1246,7 @@ mod tests {
         let variables = json!({ "max": 5 }).as_object().unwrap().clone();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
         let cost = estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
         assert_eq!(
             cost,
@@ -1269,7 +1276,7 @@ mod tests {
             .clone();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
         let cost = estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
         assert_eq!(cost.field_cost, 8.0);
     }
@@ -1294,7 +1301,7 @@ mod tests {
         for mode in [AnalysisMode::Syntactic, AnalysisMode::ExactCase] {
             let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap()).mode(mode);
             let cost = estimator
-                .estimate(&document, operation, &variables)
+                .estimate(&document, operation, valid(&variables))
                 .unwrap();
             assert_eq!(cost.type_cost, 5.0);
             assert_eq!(cost.field_cost, 2.0);
@@ -1314,7 +1321,7 @@ mod tests {
         let variables = JsonMap::new();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
         let cost = estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
         assert_eq!(cost.field_cost, 4.0);
     }
@@ -1339,7 +1346,7 @@ mod tests {
         let variables = JsonMap::new();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
         let cost = estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
         assert_eq!(cost.type_cost, 8.0);
     }
@@ -1359,7 +1366,7 @@ mod tests {
         let variables = JsonMap::new();
         let estimator = CostEstimator::new(CostModel::from_schema(&schema).unwrap());
         let cost = estimator
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
 
         assert_eq!(
@@ -1412,11 +1419,11 @@ mod tests {
 
         let syntactic = CostEstimator::new(model.clone())
             .mode(AnalysisMode::Syntactic)
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
         let exact = CostEstimator::new(model)
             .mode(AnalysisMode::ExactCase)
-            .estimate(&document, operation, &variables)
+            .estimate(&document, operation, valid(&variables))
             .unwrap();
 
         assert_eq!(
@@ -1448,7 +1455,7 @@ mod tests {
         for operation_name in ["First", "Second"] {
             let operation = document.operations.get(Some(operation_name)).unwrap();
             let cost = estimator
-                .estimate(&document, operation, &variables)
+                .estimate(&document, operation, valid(&variables))
                 .unwrap();
 
             assert_eq!(cost.field_cost, 2.0);

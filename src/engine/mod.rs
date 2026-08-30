@@ -12,6 +12,7 @@ use apollo_compiler::executable::{self};
 use apollo_compiler::response::JsonMap;
 use apollo_compiler::response::JsonValue;
 use apollo_compiler::schema::ExtendedType;
+use apollo_compiler::validation::Valid;
 use apollo_compiler::Name;
 use apollo_compiler::Node;
 use apollo_compiler::Schema;
@@ -185,7 +186,7 @@ pub struct Analysis<'analysis, 'schema> {
     document: &'analysis ExecutableDocument,
     operation: &'analysis Operation,
     mode: AnalysisMode,
-    variable_values: Option<&'analysis JsonMap>,
+    variable_values: Option<&'analysis Valid<JsonMap>>,
     analysis_name: &'static str,
 }
 
@@ -195,9 +196,8 @@ impl<'analysis> Analysis<'analysis, '_> {
         self
     }
 
-    /// Supplies already-coerced request variables. Operation defaults are used for
-    /// variables absent from this map.
-    pub fn variable_values(mut self, variable_values: &'analysis JsonMap) -> Self {
+    /// Supplies request variables produced by GraphQL variable coercion.
+    pub fn variable_values(mut self, variable_values: &'analysis Valid<JsonMap>) -> Self {
         self.variable_values = Some(variable_values);
         self
     }
@@ -215,7 +215,8 @@ impl<'analysis> Analysis<'analysis, '_> {
             });
         }
 
-        let variables = VariableEnvironment::new(self.operation, self.variable_values);
+        let variables =
+            VariableEnvironment::new(self.operation, self.variable_values.map(Valid::as_ref));
         match self.mode {
             AnalysisMode::Syntactic => Ok(syntactic::summarize(
                 self.analyzer.schema,
@@ -537,6 +538,10 @@ mod tests {
     use super::*;
     use apollo_compiler::ExecutableDocument;
 
+    fn valid(values: &JsonMap) -> &Valid<JsonMap> {
+        Valid::assume_valid_ref(values)
+    }
+
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     struct FieldCount(usize);
 
@@ -776,7 +781,7 @@ mod tests {
             let summary = analyzer
                 .operation(&document, operation)
                 .mode(mode)
-                .variable_values(&values)
+                .variable_values(valid(&values))
                 .analyze(&Count)
                 .unwrap();
 
@@ -808,7 +813,7 @@ mod tests {
             let summary = analyzer
                 .operation(&document, operation)
                 .mode(mode)
-                .variable_values(&values)
+                .variable_values(valid(&values))
                 .analyze(&Count)
                 .unwrap();
 
@@ -833,13 +838,13 @@ mod tests {
         let syntactic = analyzer
             .operation(&document, operation)
             .mode(AnalysisMode::Syntactic)
-            .variable_values(&values)
+            .variable_values(valid(&values))
             .analyze(&Count)
             .unwrap();
         let exact = analyzer
             .operation(&document, operation)
             .mode(AnalysisMode::ExactCase)
-            .variable_values(&values)
+            .variable_values(valid(&values))
             .analyze(&Count)
             .unwrap();
 
@@ -875,7 +880,7 @@ mod tests {
             let summary = analyzer
                 .operation(&document, operation)
                 .mode(AnalysisMode::ExactCase)
-                .variable_values(values)
+                .variable_values(valid(values))
                 .analyze(&Count)
                 .unwrap();
             assert_eq!(summary, FieldCount(1));
@@ -905,13 +910,13 @@ mod tests {
         let exact = analyzer
             .operation(&document, operation)
             .mode(AnalysisMode::ExactCase)
-            .variable_values(&values)
+            .variable_values(valid(&values))
             .analyze(&ContextTrace)
             .unwrap();
         let syntactic = analyzer
             .operation(&document, operation)
             .mode(AnalysisMode::Syntactic)
-            .variable_values(&values)
+            .variable_values(valid(&values))
             .analyze(&ContextTrace)
             .unwrap();
 
