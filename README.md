@@ -5,6 +5,9 @@ operations. The engine owns GraphQL-specific reasoning—possible runtime types,
 `@include` and `@skip`, field collection, fragments, and merged child selection
 sets—while an analysis supplies the values and operations used to summarize a query.
 
+For the motivation behind this work and an introduction to its verified approach, read
+[Static Analysis for GraphQL, Verified in Lean](https://duckki.github.io/2026/08/30/static-analysis-for-graphql-verified-in-lean.html).
+
 The crate includes two example analyses:
 
 - **Static Cost Estimate** is the primary example, implementing the
