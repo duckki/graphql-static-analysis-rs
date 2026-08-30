@@ -122,107 +122,125 @@ Let:
 The approximation relation only needs to be a preorder; two different
 representations may approximate each other.
 
-1. **Reflexivity.** Every summary approximates itself.
+### 1. Reflexivity
 
-   $$
-   \forall a \in S,\quad a \preceq a
-   $$
+Every summary approximates itself.
 
-2. **Transitivity.** If $b$ bounds $a$ and $c$ bounds $b$, then $c$ also bounds $a$.
+$$
+\forall a \in S,\quad a \preceq a
+$$
 
-   $$
-   \forall a,b,c \in S,\quad
-   a \preceq b \land b \preceq c \Longrightarrow a \preceq c
-   $$
+### 2. Transitivity
 
-3. **Associativity of simultaneous composition.** Regrouping fields that can occur
-   together must not change the summary.
+If $b$ bounds $a$ and $c$ bounds $b$, then $c$ also bounds $a$.
 
-   $$
-   \forall a,b,c \in S,\quad
-   (a \otimes b) \otimes c = a \otimes (b \otimes c)
-   $$
+$$
+\forall a,b,c \in S,\quad
+a \preceq b \land b \preceq c \Longrightarrow a \preceq c
+$$
 
-4. **Commutativity of simultaneous composition.** The order in which simultaneous
-   response fields are encountered must not change the summary.
+### 3. Associativity of simultaneous composition
 
-   $$
-   \forall a,b \in S,\quad a \otimes b = b \otimes a
-   $$
+Regrouping fields that can occur together must not change the summary.
 
-5. **Empty identity.** Combining an empty selection with a summary on either side must
-   return that summary.
+$$
+\forall a,b,c \in S,\quad
+(a \otimes b) \otimes c = a \otimes (b \otimes c)
+$$
 
-   $$
-   \forall a \in S,\quad
-   \mathbf{0} \otimes a = a
-   \quad\land\quad
-   a \otimes \mathbf{0} = a
-   $$
+### 4. Commutativity of simultaneous composition
 
-6. **Empty is least.** An empty selection is bounded by every summary.
+The order in which simultaneous response fields are encountered must not change the
+summary.
 
-   $$
-   \forall a \in S,\quad \mathbf{0} \preceq a
-   $$
+$$
+\forall a,b \in S,\quad a \otimes b = b \otimes a
+$$
 
-7. **Monotonicity of simultaneous composition.** Replacing either input with a more
-   conservative approximation must not make the combined result less conservative.
+### 5. Empty identity
 
-   $$
-   \forall a,a',b,b' \in S,\quad
-   a \preceq a' \land b \preceq b'
-   \Longrightarrow
-   a \otimes b \preceq a' \otimes b'
-   $$
+Combining an empty selection with a summary on either side must return that summary.
 
-8. **Join bounds both alternatives.** A joined summary must conservatively approximate
-   either feasible alternative.
+$$
+\forall a \in S,\quad
+\mathbf{0} \otimes a = a
+\quad\land\quad
+a \otimes \mathbf{0} = a
+$$
 
-   $$
-   \forall a,b \in S,\quad
-   a \preceq a \sqcup b
-   \quad\land\quad
-   b \preceq a \sqcup b
-   $$
+### 6. Empty is least
+
+An empty selection is bounded by every summary.
+
+$$
+\forall a \in S,\quad \mathbf{0} \preceq a
+$$
+
+### 7. Monotonicity of simultaneous composition
+
+Replacing either input with a more conservative approximation must not make the
+combined result less conservative.
+
+$$
+\forall a,a',b,b' \in S,\quad
+a \preceq a' \land b \preceq b'
+\Longrightarrow
+a \otimes b \preceq a' \otimes b'
+$$
+
+### 8. Join bounds both alternatives
+
+A joined summary must conservatively approximate either feasible alternative.
+
+$$
+\forall a,b \in S,\quad
+a \preceq a \sqcup b
+\quad\land\quad
+b \preceq a \sqcup b
+$$
 
 ExactCases also preserves type-region alternatives beneath local Boolean decisions.
 An algebra used with ExactCases must support that factorization:
 
-9. **Join is below every common upper bound.** If one summary already bounds both
-   alternatives, joining them must not exceed it. Together with the previous law,
-   this makes `join` a least upper bound, up to the summary preorder.
+### 9. Join is below every common upper bound
 
-   $$
-   \forall a,b,u \in S,\quad
-   a \preceq u \land b \preceq u
-   \Longrightarrow
-   a \sqcup b \preceq u
-   $$
+If one summary already bounds both alternatives, joining them must not exceed it.
+Together with the previous law, this makes `join` a least upper bound, up to the
+summary preorder.
 
-10. **Simultaneous-composition factoring.** Distributing a simultaneous contribution
-    into both sides of an alternative may only move upward in the approximation order.
+$$
+\forall a,b,u \in S,\quad
+a \preceq u \land b \preceq u
+\Longrightarrow
+a \sqcup b \preceq u
+$$
 
-    $$
-    \forall a,b,c \in S,\quad
-    (a \sqcup b) \otimes c
-    \preceq
-    (a \otimes c) \sqcup (b \otimes c)
-    $$
+### 10. Simultaneous-composition factoring
 
-    Because $\otimes$ is commutative, the corresponding law with $c$ on the left
-    follows from this statement.
+Distributing a simultaneous contribution into both sides of an alternative may only
+move upward in the approximation order.
 
-11. **Field-transfer factoring.** Applying a field transfer after joining alternative
-    child summaries may only be more precise than applying the transfer separately and
-    then joining the results.
+$$
+\forall a,b,c \in S,\quad
+(a \sqcup b) \otimes c
+\preceq
+(a \otimes c) \sqcup (b \otimes c)
+$$
 
-    $$
-    \forall g\;\forall a,b \in S,\quad
-    F_g(a \sqcup b)
-    \preceq
-    F_g(a) \sqcup F_g(b)
-    $$
+Because $\otimes$ is commutative, the corresponding law with $c$ on the left follows
+from this statement.
+
+### 11. Field-transfer factoring
+
+Applying a field transfer after joining alternative child summaries may only be more
+precise than applying the transfer separately and then joining the results.
+
+$$
+\forall g\;\forall a,b \in S,\quad
+F_g(a \sqcup b)
+\preceq
+F_g(a) \sqcup F_g(b)
+$$
 
 These are structural algebra laws. A sound analysis must additionally show that its
 `empty`, `combine`, and `field` operations conservatively represent their corresponding
