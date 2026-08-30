@@ -176,8 +176,9 @@ cargo fmt --manifest-path fuzz/Cargo.toml --check
 
 ## Current alignment status
 
-The current Rust engine is aligned with Lean commit
-`c354cdb9a4296f46f0fb78871ed2500c32a5fec8` (`Optimize the TreeSummary analysis`):
+The current Rust engine was rechecked on 2026-08-29 against local-main Lean commit
+`06a5d04d6c00b875d7da9c1c4f1c148b32191f0d`
+(`Refine ExactCases outcome semantics and proofs`):
 
 - all 15,840 deterministic ExactCase/Syntactic and max/cases/trace/cost profiles agree;
 - minimized input `--input-hex 6162` verifies that a complete request missing `$x`

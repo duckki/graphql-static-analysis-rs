@@ -235,7 +235,7 @@ fn structural_selection(depth: u8, cursor: &mut ByteCursor<'_>) -> SelectionSpec
             }
         }
         2 => {
-            let field_name = if cursor.next() % 2 == 0 {
+            let field_name = if cursor.next().is_multiple_of(2) {
                 "friend"
             } else {
                 "friends"

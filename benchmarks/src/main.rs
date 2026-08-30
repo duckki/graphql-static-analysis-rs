@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use apollo_compiler::response::serde_json_bytes::json;
 use apollo_compiler::response::JsonMap;
 use apollo_compiler::{ExecutableDocument, Schema};
+use graphql_static_analysis::cost::{CostEstimator, CostModel};
 use graphql_static_analysis::max_response_size::MaxResponseSizeEstimator;
 use graphql_static_analysis::AnalysisMode;
 
@@ -73,15 +74,25 @@ struct Scenario {
     variables: JsonMap,
 }
 
-fn schema_sdl(object_count: usize) -> String {
+fn schema_sdl_with_topology(
+    object_count: usize,
+    abstract_type_count: usize,
+    incidences_per_object: usize,
+) -> String {
+    assert!(abstract_type_count > 0);
+    assert!(incidences_per_object > 0 && incidences_per_object <= abstract_type_count);
     let mut output = String::from(
         r#"
+directive @cost(weight: String!)
+  on ARGUMENT_DEFINITION | ENUM | FIELD_DEFINITION |
+     INPUT_FIELD_DEFINITION | OBJECT | SCALAR
+
 type Query { nodes: [Node] }
 
 interface Node { id: ID! }
 "#,
     );
-    for index in 0..ABSTRACT_TYPE_COUNT {
+    for index in 0..abstract_type_count {
         output.push_str(&format!(
             r#"
 interface NodeSubset{index} implements Node {{
@@ -93,16 +104,16 @@ interface NodeSubset{index} implements Node {{
         ));
     }
     for index in 0..object_count {
-        let interfaces = (0..4)
-            .map(|offset| format!("NodeSubset{}", (index + offset) % ABSTRACT_TYPE_COUNT))
+        let interfaces = (0..incidences_per_object)
+            .map(|offset| format!("NodeSubset{}", (index + offset) % abstract_type_count))
             .collect::<Vec<_>>()
             .join(" & ");
         output.push_str(&format!(
             r#"
 type NodeType{index} implements Node & {interfaces} {{
   id: ID!
-  includedValue: String
-  skippedValue: String
+  includedValue: String @cost(weight: "1")
+  skippedValue: String @cost(weight: "7")
 }}
 "#,
         ));
@@ -132,8 +143,21 @@ fn operation_source(query_spreads: usize) -> String {
 }
 
 fn scenario(object_count: usize, query_spreads: usize) -> Scenario {
-    let schema =
-        Schema::parse_and_validate(schema_sdl(object_count), "benchmark-schema.graphql").unwrap();
+    scenario_with_topology(object_count, ABSTRACT_TYPE_COUNT, 4, query_spreads)
+}
+
+fn scenario_with_topology(
+    object_count: usize,
+    abstract_type_count: usize,
+    incidences_per_object: usize,
+    query_spreads: usize,
+) -> Scenario {
+    assert!(query_spreads <= abstract_type_count);
+    let schema = Schema::parse_and_validate(
+        schema_sdl_with_topology(object_count, abstract_type_count, incidences_per_object),
+        "benchmark-schema.graphql",
+    )
+    .unwrap();
     let document = ExecutableDocument::parse_and_validate(
         &schema,
         operation_source(query_spreads),
@@ -151,6 +175,44 @@ fn scenario(object_count: usize, query_spreads: usize) -> Scenario {
         schema: schema.into_inner(),
         document: document.into_inner(),
         variables,
+    }
+}
+
+fn structure_scenario(nesting_depth: usize, response_fan_in: usize) -> Scenario {
+    assert!(response_fan_in > 0);
+    let mut schema_source = String::from("type Query { root: Level0 }\n");
+    for level in 0..nesting_depth {
+        schema_source.push_str(&format!(
+            "type Level{level} {{ child: Level{} }}\n",
+            level + 1,
+        ));
+    }
+    schema_source.push_str(&format!(
+        "type Level{nesting_depth} {{ value: String @cost(weight: \"1\") }}\n"
+    ));
+    schema_source.push_str(
+        "directive @cost(weight: String!) on ARGUMENT_DEFINITION | ENUM | FIELD_DEFINITION | INPUT_FIELD_DEFINITION | OBJECT | SCALAR\n",
+    );
+    let schema = Schema::parse_and_validate(schema_source, "structure-schema.graphql").unwrap();
+
+    let mut operation = String::from("query Benchmark { root {");
+    for _ in 0..nesting_depth {
+        operation.push_str(" child {");
+    }
+    for _ in 0..response_fan_in {
+        operation.push_str(" shared: value");
+    }
+    for _ in 0..nesting_depth {
+        operation.push_str(" }");
+    }
+    operation.push_str(" } }");
+    let document =
+        ExecutableDocument::parse_and_validate(&schema, operation, "structure-query.graphql")
+            .unwrap();
+    Scenario {
+        schema: schema.into_inner(),
+        document: document.into_inner(),
+        variables: JsonMap::new(),
     }
 }
 
@@ -290,10 +352,11 @@ fn benchmark(
         samples.push(elapsed.as_nanos() as u64);
         checksum = checksum.wrapping_add(value);
     }
-    samples.sort_unstable();
-    let total_ns = samples[samples.len() / 2];
+    let mut sorted_samples = samples.clone();
+    sorted_samples.sort_unstable();
+    let total_ns = sorted_samples[sorted_samples.len() / 2];
     println!(
-        "{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         backend.name(),
         variable_input.name(),
         object_count,
@@ -303,6 +366,11 @@ fn benchmark(
         iterations,
         total_ns,
         total_ns / iterations,
+        samples[0],
+        samples[1],
+        samples[2],
+        samples[3],
+        samples[4],
         checksum,
     );
 }
@@ -325,10 +393,11 @@ fn benchmark_pathological_booleans(
         samples.push(elapsed.as_nanos() as u64);
         checksum = checksum.wrapping_add(value);
     }
-    samples.sort_unstable();
-    let total_ns = samples[samples.len() / 2];
+    let mut sorted_samples = samples.clone();
+    sorted_samples.sort_unstable();
+    let total_ns = sorted_samples[sorted_samples.len() / 2];
     println!(
-        "{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         backend.name(),
         variable_input.name(),
         variable_count,
@@ -337,6 +406,146 @@ fn benchmark_pathological_booleans(
         iterations,
         total_ns,
         total_ns / iterations,
+        samples[0],
+        samples[1],
+        samples[2],
+        samples[3],
+        samples[4],
+        checksum,
+    );
+}
+
+fn estimate_cost(scenario: &Scenario, estimator: &CostEstimator<'_>) -> (f64, f64) {
+    let operation = scenario.document.operations.get(Some("Benchmark")).unwrap();
+    let cost = estimator
+        .estimate(&scenario.document, operation, &scenario.variables)
+        .unwrap();
+    (cost.type_cost, cost.field_cost)
+}
+
+fn run_cost_iterations(scenario: &Scenario, estimator: &CostEstimator<'_>, iterations: u64) -> u64 {
+    let mut checksum = 0_u64;
+    for _ in 0..iterations {
+        let (type_cost, field_cost) = estimate_cost(black_box(scenario), black_box(estimator));
+        checksum = checksum.wrapping_add((type_cost + field_cost) as u64);
+    }
+    black_box(checksum)
+}
+
+fn timed_cost(
+    scenario: &Scenario,
+    estimator: &CostEstimator<'_>,
+    iterations: u64,
+) -> (Duration, u64) {
+    let start = Instant::now();
+    let checksum = run_cost_iterations(scenario, estimator, iterations);
+    (start.elapsed(), checksum)
+}
+
+fn cost_calibration_iterations(scenario: &Scenario, estimator: &CostEstimator<'_>) -> u64 {
+    let mut iterations = 1;
+    loop {
+        let (elapsed, _) = timed_cost(scenario, estimator, iterations);
+        if elapsed >= TARGET_SAMPLE || iterations >= MAX_CALIBRATION_ITERATIONS {
+            return iterations;
+        }
+        iterations *= 2;
+    }
+}
+
+fn benchmark_cost(
+    scenario: &Scenario,
+    object_count: usize,
+    abstract_type_count: usize,
+    incidences_per_object: usize,
+    query_spreads: usize,
+    backend: Backend,
+    expected: Option<(f64, f64)>,
+) {
+    let estimator = CostEstimator::new(CostModel::from_schema(&scenario.schema).unwrap())
+        .mode(backend.mode())
+        .default_list_size(1);
+    let (type_cost, field_cost) = estimate_cost(scenario, &estimator);
+    if let Some(expected) = expected {
+        assert_eq!((type_cost, field_cost), expected);
+    }
+    run_cost_iterations(scenario, &estimator, 2);
+    let iterations = cost_calibration_iterations(scenario, &estimator);
+    let mut samples = Vec::with_capacity(SAMPLE_COUNT);
+    let mut checksum = 0_u64;
+    for _ in 0..SAMPLE_COUNT {
+        let (elapsed, value) = timed_cost(scenario, &estimator, iterations);
+        samples.push(elapsed.as_nanos() as u64);
+        checksum = checksum.wrapping_add(value);
+    }
+    let mut sorted_samples = samples.clone();
+    sorted_samples.sort_unstable();
+    let total_ns = sorted_samples[sorted_samples.len() / 2];
+    println!(
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        backend.name(),
+        object_count,
+        abstract_type_count,
+        incidences_per_object,
+        query_spreads,
+        type_cost,
+        field_cost,
+        iterations,
+        total_ns,
+        total_ns / iterations,
+        samples[0],
+        samples[1],
+        samples[2],
+        samples[3],
+        samples[4],
+        checksum,
+    );
+}
+
+fn expected_cost(backend: Backend) -> (f64, f64) {
+    match backend {
+        Backend::ExactCase => (2.0, 2.0),
+        Backend::Syntactic => (2.0, 3.0),
+    }
+}
+
+fn benchmark_cost_structure(
+    scenario: &Scenario,
+    nesting_depth: usize,
+    response_fan_in: usize,
+    backend: Backend,
+) {
+    let estimator = CostEstimator::new(CostModel::from_schema(&scenario.schema).unwrap())
+        .mode(backend.mode())
+        .default_list_size(1);
+    let (type_cost, field_cost) = estimate_cost(scenario, &estimator);
+    run_cost_iterations(scenario, &estimator, 2);
+    let iterations = cost_calibration_iterations(scenario, &estimator);
+    let mut samples = Vec::with_capacity(SAMPLE_COUNT);
+    let mut checksum = 0_u64;
+    for _ in 0..SAMPLE_COUNT {
+        let (elapsed, value) = timed_cost(scenario, &estimator, iterations);
+        samples.push(elapsed.as_nanos() as u64);
+        checksum = checksum.wrapping_add(value);
+    }
+    let mut sorted_samples = samples.clone();
+    sorted_samples.sort_unstable();
+    let total_ns = sorted_samples[sorted_samples.len() / 2];
+    println!(
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        backend.name(),
+        nesting_depth,
+        response_fan_in,
+        type_cost,
+        field_cost,
+        iterations,
+        total_ns,
+        total_ns / iterations,
+        samples[0],
+        samples[1],
+        samples[2],
+        samples[3],
+        samples[4],
         checksum,
     );
 }
@@ -401,7 +610,7 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("pathological-booleans") {
         println!(
-            "backend,variables,boolean_variables_per_region,total_boolean_variables,response_size,iterations,median_total_ns,median_ns_per_op,checksum"
+            "backend,variables,boolean_variables_per_region,total_boolean_variables,response_size,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
         );
         for variable_count in 1..=PATHOLOGICAL_BOOLEAN_MAX_K {
             let scenario = pathological_boolean_scenario(variable_count);
@@ -418,6 +627,91 @@ fn main() {
         }
         return;
     }
+    if args.get(1).map(String::as_str) == Some("cost-topology-point") {
+        let object_count = args[2].parse().unwrap();
+        let abstract_type_count = args[3].parse().unwrap();
+        let incidences_per_object = args[4].parse().unwrap();
+        let query_spreads = args[5].parse().unwrap();
+        let backend = Backend::parse(&args[6]);
+        println!(
+            "backend,object_types,abstract_types,incidences_per_object,query_spreads,type_cost,field_cost,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
+        );
+        let scenario = scenario_with_topology(
+            object_count,
+            abstract_type_count,
+            incidences_per_object,
+            query_spreads,
+        );
+        benchmark_cost(
+            &scenario,
+            object_count,
+            abstract_type_count,
+            incidences_per_object,
+            query_spreads,
+            backend,
+            None,
+        );
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("cost-structure-point") {
+        let nesting_depth = args[2].parse().unwrap();
+        let response_fan_in = args[3].parse().unwrap();
+        let backend = Backend::parse(&args[4]);
+        println!(
+            "backend,nesting_depth,response_fan_in,type_cost,field_cost,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
+        );
+        let scenario = structure_scenario(nesting_depth, response_fan_in);
+        benchmark_cost_structure(&scenario, nesting_depth, response_fan_in, backend);
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("cost-point") {
+        let object_count = args[2].parse().unwrap();
+        let query_spreads = args[3].parse().unwrap();
+        let backend = Backend::parse(&args[4]);
+        println!(
+            "backend,object_types,abstract_types,incidences_per_object,query_spreads,type_cost,field_cost,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
+        );
+        benchmark_cost(
+            &scenario(object_count, query_spreads),
+            object_count,
+            ABSTRACT_TYPE_COUNT,
+            4,
+            query_spreads,
+            backend,
+            Some(expected_cost(backend)),
+        );
+        return;
+    }
+    if matches!(
+        args.get(1).map(String::as_str),
+        Some("cost-schema-size" | "cost-query-size" | "cost-endpoints")
+    ) {
+        let axis = args[1].as_str();
+        let points = match axis {
+            "cost-schema-size" => (1..=10).map(|scale| (scale * 1024, 8)).collect(),
+            "cost-query-size" => (1..=10).map(|scale| (1024, scale * 8)).collect(),
+            "cost-endpoints" => vec![(1024, 8), (10_240, 8), (1024, 80)],
+            _ => unreachable!(),
+        };
+        println!(
+            "backend,object_types,abstract_types,incidences_per_object,query_spreads,type_cost,field_cost,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
+        );
+        for (object_count, query_spreads) in points {
+            let scenario = scenario(object_count, query_spreads);
+            for backend in [Backend::ExactCase, Backend::Syntactic] {
+                benchmark_cost(
+                    &scenario,
+                    object_count,
+                    ABSTRACT_TYPE_COUNT,
+                    4,
+                    query_spreads,
+                    backend,
+                    Some(expected_cost(backend)),
+                );
+            }
+        }
+        return;
+    }
     let axis = args.get(1).map(String::as_str).unwrap_or("schema-size");
     let points = match axis {
         "schema-size" => (1..=10).map(|scale| (scale * 1024, 8)).collect::<Vec<_>>(),
@@ -428,7 +722,7 @@ fn main() {
         ),
     };
     println!(
-        "backend,variables,object_types,abstract_types,query_spreads,response_size,iterations,median_total_ns,median_ns_per_op,checksum"
+        "backend,variables,object_types,abstract_types,query_spreads,response_size,iterations,median_total_ns,median_ns_per_op,sample_0_total_ns,sample_1_total_ns,sample_2_total_ns,sample_3_total_ns,sample_4_total_ns,checksum"
     );
     for (object_count, query_spreads) in points {
         let scenario = scenario(object_count, query_spreads);
