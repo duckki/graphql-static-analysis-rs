@@ -1,13 +1,26 @@
 [package]
 name = "graphql-static-analysis"
 version = "0.1.0"
-description = "Composable static analyses for GraphQL queries."
+description = "A composable static-analysis engine for GraphQL operations"
 readme = "README.md"
+documentation = "https://docs.rs/graphql-static-analysis"
+repository = "https://github.com/duckki/graphql-static-analysis-rs"
 license = "MIT"
 keywords = ["graphql", "static-analysis", "query-analysis"]
 categories = ["development-tools", "web-programming"]
+exclude = [
+    "/.github/",
+    "/.gitignore",
+    "/AGENTS.md",
+    "/Makefile",
+    "/benchmarks/",
+    "/docs/performance-benchmark.md",
+    "/docs/release-engineering.md",
+    "/fuzz/",
+    "/rustfmt.toml",
+]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.90"
 
 [dependencies]
 apollo-compiler = "1.32.0"

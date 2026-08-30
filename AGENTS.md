@@ -41,3 +41,14 @@
 - Do not call a small timing change a regression or improvement from one process.
   For a decision, run three fresh processes per variant in alternating order and use
   pointwise medians on the same host.
+
+## Release engineering
+
+- Read [`docs/release-engineering.md`](docs/release-engineering.md) before changing
+  package metadata or versions, publishing the crate, or creating release tags. It is
+  the canonical release procedure.
+- Keep releases manual until the repository has a concrete need for automated
+  publishing. Validate and inspect the package from a clean release commit before
+  uploading it.
+- Never use `--allow-dirty` for an actual release. Do not run `cargo publish`, push a
+  release tag, or create a GitHub release without an explicit user request.
