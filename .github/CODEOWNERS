@@ -1,0 +1,4 @@
+# Require a human maintainer review for every path when the main-branch ruleset
+# enforces code-owner approval. GitHub Actions runs as github-actions[bot], so its
+# reviews cannot satisfy ownership by @duckki.
+* @duckki
