@@ -188,6 +188,79 @@ If a published version is broken, do not try to replace it. Yank it with
 merge the next release PR. Yanking prevents new dependency resolution to that version
 but does not delete it or break projects whose lockfiles already select it.
 
+## Security model
+
+Release security is split between controls committed to this repository and controls
+maintained in GitHub and crates.io settings. Neither side is sufficient by itself.
+
+### Controls in the repository
+
+- [`.github/CODEOWNERS`](../.github/CODEOWNERS) assigns every path to `@duckki`.
+  CODEOWNERS identifies the required human reviewer; the `main` ruleset described below
+  must require code-owner review for this assignment to block merges.
+- Workflows default to `contents: read`. Only the Prepare release job receives
+  `actions: write`, `contents: write`, and `pull-requests: write`, and only the Publish
+  job receives `contents: write` and `id-token: write`.
+- Prepare release is manually dispatched and refuses to operate anywhere except the
+  current tip of `main`. The write-capable job does not approve or merge pull requests.
+- Third-party actions are pinned to full commit identifiers, and the release-plz CLI
+  version is explicit. Review dependency updates before changing either value.
+- Automatic publishing accepts only the merge commit of a merged `release-plz-*` PR.
+  Manual recovery accepts only an explicitly named merged release PR, verifies that
+  its reviewed head is a parent of the merge, and checks that the merge remains on
+  `main`.
+- Reconciliation downloads the immutable crates.io archive and requires its recorded
+  Git source commit to match the reviewed release PR exactly. It creates missing
+  metadata but refuses to move a conflicting tag or replace an uploaded crate.
+- Publishing uses crates.io OIDC trusted publishing. The repository stores no
+  long-lived registry token, and overlapping publish or recovery runs are serialized.
+
+### GitHub settings checklist
+
+Maintain these settings for the repository:
+
+- **Settings → Rules → Rulesets → branch ruleset for `main`**
+  - Set enforcement to **Active** and target only the `main` branch.
+  - Require a pull request before merging and require at least one approval.
+  - Require review from Code Owners.
+  - Dismiss stale approvals when new commits are pushed.
+  - Require approval of the most recent reviewable push.
+  - Require the CI checks `test` and `msrv` to pass.
+  - Permit the **merge commit** method used by the release workflow; do not require
+    linear history.
+  - Block force pushes and branch deletion.
+  - Do not grant GitHub Actions or `github-actions[bot]` a bypass. A solo maintainer may
+    give the repository administrator a **pull requests only** bypass so their own PRs
+    remain workable without permitting direct pushes to `main`.
+- **Settings → Rules → Rulesets → tag ruleset for `v*`**
+  - Allow creation so the Publish workflow can create a new release tag.
+  - Restrict updates and deletions so an existing release tag cannot be moved or
+    removed.
+  - Do not grant GitHub Actions a bypass for update or deletion restrictions.
+- **Settings → Environments → `release`**
+  - Allow deployments from the `main` branch only. The current workflow does not deploy
+    from release tags, so remove obsolete `v*` tag policies.
+  - Keep environment administrators and protection changes limited to maintainers.
+  - An environment required reviewer is optional defense in depth, but it adds a third
+    manual approval after merging the release PR.
+- **Settings → Actions → General → Actions permissions**
+  - Keep the action allow-list, if enabled, limited to the pinned actions used by the
+    workflows. Do not allow untrusted actions or mutable action references.
+- **Settings → Actions → General → Workflow permissions**
+  - Select **Read repository contents and packages permissions** as the default.
+  - Enable **Allow GitHub Actions to create and approve pull requests** only after the
+    `main` ruleset below is active. GitHub bundles creation and approval; the ruleset
+    makes an Actions approval insufficient by requiring review from the human code
+    owner.
+- **Repository secrets and variables**
+  - Do not add `CARGO_REGISTRY_TOKEN`; publishing must continue to use OIDC.
+  - Review new secrets before exposing them to any workflow with third-party steps.
+
+Revisit this checklist whenever the release workflow, branch strategy, repository
+ownership, trusted publisher, or required CI jobs change. In particular, renaming a CI
+job requires updating the required status checks, and changing the release environment
+or workflow filename requires updating the crates.io trusted-publisher identity.
+
 ## One-time repository setup
 
 The crates.io trusted publisher for this crate must use these values:
@@ -198,13 +271,9 @@ The crates.io trusted publisher for this crate must use these values:
 - Environment: `release`
 
 The GitHub repository must have an environment named `release` that permits `main`.
-Under **Settings → Actions → General → Workflow permissions**, enable **Allow GitHub
-Actions to create and approve pull requests**. GitHub bundles creation and approval in
-one repository setting; the Prepare release workflow requests `pull-requests: write`
-only for its release-PR job and never approves a review. The remaining jobs receive
-only the permissions needed to validate code, exchange the OIDC identity, tag the
-release, and publish the GitHub release. Release-plz performs the trusted-publishing
-exchange itself; do not add `CARGO_REGISTRY_TOKEN` as a repository secret.
+Complete and maintain the GitHub settings checklist above before enabling Actions to
+create pull requests. Release-plz performs the trusted-publishing exchange itself; do
+not add `CARGO_REGISTRY_TOKEN` as a repository secret.
 
 After one successful trusted publication, consider enabling **Require trusted
 publishing for all new versions** in the crate's crates.io settings.
