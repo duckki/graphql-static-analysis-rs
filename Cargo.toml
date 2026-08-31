@@ -17,6 +17,7 @@ exclude = [
     "/docs/performance-benchmark.md",
     "/docs/release-engineering.md",
     "/fuzz/",
+    "/release-plz.toml",
     "/rustfmt.toml",
 ]
 edition = "2021"

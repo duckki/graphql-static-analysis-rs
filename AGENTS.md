@@ -47,8 +47,13 @@
 - Read [`docs/release-engineering.md`](docs/release-engineering.md) before changing
   package metadata or versions, publishing the crate, or creating release tags. It is
   the canonical release procedure.
-- Publish through `.github/workflows/publish.yml` using crates.io trusted publishing.
-  Validate and inspect the package from a clean release commit before creating the
-  release tag.
-- Never use `--allow-dirty` for an actual release. Do not run `cargo publish` locally,
-  push a release tag, or create a GitHub release without an explicit user request.
+- Release-plz owns version bumps, release tags, GitHub releases, and crates.io
+  publishing. Merging its `release-plz-*` release PR is the release action; do not
+  perform any of those steps manually.
+- Trigger `.github/workflows/prepare-release.yml` only for an explicit request to
+  prepare or publish a release. Creating the release PR completes that request; stop
+  for review and require a separate explicit request before merging it.
+- Run the manual recovery entry point in `.github/workflows/publish.yml` only for an
+  explicit request to recover a specific merged release PR. It may perform the
+  irreversible crates.io upload if the reviewed version is still missing.
+- Never use `--allow-dirty` for an actual release or run `cargo publish` locally.
