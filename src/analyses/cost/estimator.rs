@@ -221,17 +221,14 @@ impl CostAlgebra<'_, '_> {
         child_summary: &CostSummary<'_>,
         inherited_sized_fields: &[SizedField],
     ) -> (Cost, bool) {
+        let field = group.representative_field();
         let mut cost = Cost::ZERO;
         let mut depends_on_inherited_size = false;
-        for field in group.fields() {
-            let mut field_cost = Cost::ZERO;
-            for parent_type in &group.possible_types {
-                let (use_cost, is_list) =
-                    self.field_use_cost(parent_type, field, child_summary, inherited_sized_fields);
-                field_cost = field_cost.max(use_cost);
-                depends_on_inherited_size |= is_list;
-            }
-            cost = cost.max(field_cost);
+        for parent_type in &group.possible_types {
+            let (use_cost, is_list) =
+                self.field_use_cost(parent_type, field, child_summary, inherited_sized_fields);
+            cost = cost.max(use_cost);
+            depends_on_inherited_size |= is_list;
         }
         (cost, depends_on_inherited_size)
     }
@@ -1189,6 +1186,26 @@ mod tests {
                 field_cost: 1.0,
             }
         );
+    }
+
+    #[test]
+    fn representative_field_uses_equivalent_reordered_arguments() {
+        let query = r#"
+            {
+              books: rangeBooks(first: 3, last: 5) { title }
+              books: rangeBooks(last: 5, first: 3) { title }
+            }
+        "#;
+
+        for mode in [AnalysisMode::Syntactic, AnalysisMode::ExactCase] {
+            assert_eq!(
+                ibm_estimate(query, JsonMap::new(), mode),
+                Cost {
+                    type_cost: 6.0,
+                    field_cost: 1.0,
+                }
+            );
+        }
     }
 
     const DEFAULT_PRUNED_QUERY: &str = r#"

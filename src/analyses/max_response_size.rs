@@ -119,16 +119,15 @@ impl Algebra for MaxResponseSizeAlgebra<'_> {
 
 impl MaxResponseSizeAlgebra<'_> {
     fn field_list_multiplier(&self, group: &CollectedFieldGroup) -> u64 {
+        let field = group.representative_field();
         group
             .possible_types
             .iter()
-            .flat_map(|parent_type| {
-                group.fields().iter().filter_map(|field| {
-                    self.schema
-                        .type_field(parent_type, &field.name)
-                        .ok()
-                        .map(|definition| list_multiplier(self.list_size, &definition.ty))
-                })
+            .filter_map(|parent_type| {
+                self.schema
+                    .type_field(parent_type, &field.name)
+                    .ok()
+                    .map(|definition| list_multiplier(self.list_size, &definition.ty))
             })
             .fold(1, u64::max)
     }

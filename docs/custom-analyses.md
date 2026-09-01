@@ -17,9 +17,12 @@ An algebra defines one summary type and four operations:
 - `join` bounds alternative Boolean assignments or possible-type cases.
 
 `CollectedFieldGroup` exposes the possible parent object types, inherited and local
-Boolean conditions, the shared response name, and the original field occurrences.
-Multiple field occurrences in a group represent one collected response field, so an
-analysis should not automatically charge once per occurrence.
+Boolean conditions, the shared response name, a representative field occurrence, and
+all original field occurrences. Use `representative_field()` when an analysis needs
+the validated field name or arguments. The complete `fields()` list remains available
+for occurrence-sensitive work such as inspecting every merged child selection set.
+Multiple occurrences in a group represent one collected response field, so an analysis
+should not automatically charge once per occurrence.
 
 Summary values may be reused across alternatives. Keep `Summary::clone` inexpensive
 when the summary is large—for example, store an expression behind `Rc`.
