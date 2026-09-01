@@ -173,6 +173,13 @@ The release PR number is the recovery authority: it identifies both the reviewed
 source and the intended package version. Do not use **Prepare release** to recover a
 merged PR; its job is to propose version and changelog changes before the merge.
 
+If a release PR was accidentally squash- or rebase-merged, Publish deliberately stops
+before uploading because there is no merge commit connecting the reviewed release head
+to `main`. The manual recovery action rejects that PR for the same reason. Create a
+new `release-plz-recover-<version>` PR from the resulting `main`, document the recovery
+or make the required correction there, and merge that PR with **Create a merge commit**.
+Its merge is the audited trigger that publishes the already-prepared version.
+
 Additional recovery rules:
 
 - If the upload result is ambiguous, check crates.io before retrying. Release-plz
