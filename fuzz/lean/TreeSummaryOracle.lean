@@ -333,7 +333,7 @@ def formatBooleanLiteral (literal : BooleanLiteral) : String :=
 def traceField (group : CollectedFieldGroup) (children : List String) : String :=
   let possibleTypes := group.condition.possibleTypes.mergeSort
   let booleans := group.childInheritedBooleanCondition.map formatBooleanLiteral |>.mergeSort
-  let fieldNames := group.fieldNames.mergeSort
+  let fieldNames := (group.fields.map Field.fieldName).mergeSort
   s!"{group.responseName}<{String.intercalate "+" possibleTypes}>" ++
     s!"[{String.intercalate "+" booleans}]" ++
     s!"#{String.intercalate "+" fieldNames}" ++

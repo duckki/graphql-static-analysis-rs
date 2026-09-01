@@ -77,9 +77,19 @@ pub struct CollectedFieldGroup {
 }
 
 impl CollectedFieldGroup {
+    /// Returns a representative field occurrence from this non-empty group.
+    ///
+    /// GraphQL field-merging validation guarantees that fields collected under one
+    /// response name and applicable to the same runtime object have the same field
+    /// name and equivalent arguments. Analyses can therefore use this occurrence for
+    /// resolver lookup and argument evaluation.
+    pub fn representative_field(&self) -> &Node<executable::Field> {
+        &self.fields[0]
+    }
+
     /// Returns the shared response name.
     pub fn response_name(&self) -> &Name {
-        self.fields[0].response_key()
+        self.representative_field().response_key()
     }
 
     /// Returns the non-empty list of collected field occurrences.

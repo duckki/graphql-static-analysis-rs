@@ -176,15 +176,17 @@ cargo fmt --manifest-path fuzz/Cargo.toml --check
 
 ## Current alignment status
 
-The current Rust engine was rechecked on 2026-08-29 against local-main Lean commit
-`06a5d04d6c00b875d7da9c1c4f1c148b32191f0d`
-(`Refine ExactCases outcome semantics and proofs`):
+The current Rust engine was rechecked on 2026-09-01 against Lean commit
+`a0d1ba3c7cb3306b0bb21775272716c5e9d809e5`
+(`Improve tree-summary analysis using representativeField`):
 
 - all 15,840 deterministic ExactCase/Syntactic and max/cases/trace/cost profiles agree;
 - minimized input `--input-hex 6162` verifies that a complete request missing `$x`
   selects the modeled Boolean `false` behavior;
 - minimized input `--input-hex 010200000200` verifies inherited exact-case Boolean
   context in the recursive trace;
+- field analyses use one representative occurrence's validated field name and
+  equivalent arguments while retaining per-runtime-parent schema lookup;
 - the ExactCase implementation uses the model's incremental branch-local cursor,
   binary Boolean decisions, structural joins, and completed-boundary compaction.
 
