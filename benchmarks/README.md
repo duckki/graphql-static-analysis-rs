@@ -45,19 +45,80 @@ uses a hierarchical bootstrap over fresh-process rows and within-process samples
 
 ## Run
 
+### Captured before/after comparisons
+
+Use the maintained Python 3.10+ tools for engine comparisons. From this directory,
+capture the baseline before editing the engine, then capture the candidate:
+
+```sh
+python3 artifacts.py --output-dir ../.scratch/before
+# Make the engine change, then capture its release build.
+python3 artifacts.py --output-dir ../.scratch/after
+python3 compare.py --before ../.scratch/before --after ../.scratch/after \
+  --output-dir ../.scratch/comparison
+```
+
+`artifacts.py` runs `cargo build --release --locked` before copying the compiled
+binary and source/configuration files into a new snapshot directory. Add `--offline`
+when dependencies are already cached. Its manifest records source and binary SHA-256
+hashes, the Git revision and dirty state, toolchain, explicit build overrides, and
+host details. Source hashes are checked before and after the build and after copying
+the snapshot. Artifact directories
+must be new and under `.scratch/` or outside the repository.
+
+`compare.py` verifies both snapshots, requires matching toolchain/host and benchmark
+source/lockfile, and runs only their frozen binaries. The default campaign covers
+schema size, query size, Boolean stress, and cost endpoints in three fresh processes
+per variant, alternating before/after. Use `--axes endpoints` for a shorter endpoint
+comparison or select other documented axes. The generated inputs, four response-size
+configurations, result assertions, and built-in sampling settings stay unchanged.
+
+The output includes every process CSV, a manifest with run times, arguments and
+hashes, pointwise process medians in `comparison.csv`, and schema/query log-log
+exponents in `scaling.json`. Endpoint-only runs produce no scaling fit. Minimum and
+maximum process medians are retained to help assess variation. Smaller changes still
+need judgment; the script does not label a timing difference a regression or speedup.
+
+For the matching macOS sampling campaign:
+
+```sh
+python3 profile_estimate.py --snapshot ../.scratch/after \
+  --output-dir ../.scratch/profile
+```
+
+This runs two five-second captures for each of the five recorded ExactCase workloads,
+using `sample` at a requested one-millisecond interval. Select workloads with
+`--workloads schema-supplied query-supplied`; native sampling requires permission to
+inspect the child benchmark process. Stack captures, logs, arguments and snapshot
+provenance remain in the output directory. `cpu-summary.csv` excludes startup stacks
+outside `MaxResponseSizeEstimator::estimate` and counts recursive frames once per
+sample. Its inclusive categories overlap and must not be added. Inlining can limit
+symbol attribution. The profiler stops only benchmark processes it launches.
+
+Integrity tests for snapshot tampering, incompatible benchmarks, process medians,
+scaling, incomplete CSVs, and recursive sample attribution run in CI:
+
+```sh
+python3 -m unittest discover -s . -p 'test_*.py'
+```
+
+### Direct invocation
+
 Run these commands from this directory. Build once, then invoke the binary directly
 so Cargo startup and compilation are not included in the surrounding observation.
 
 ```sh
 cargo build --release --locked
+mkdir -p ../.scratch/direct
 target/release/graphql-static-analysis-benchmark endpoints
-target/release/graphql-static-analysis-benchmark schema-size > schema.csv
-target/release/graphql-static-analysis-benchmark query-size > query.csv
+target/release/graphql-static-analysis-benchmark schema-size > ../.scratch/direct/schema.csv
+target/release/graphql-static-analysis-benchmark query-size > ../.scratch/direct/query.csv
 target/release/graphql-static-analysis-benchmark pathological-booleans \
-  > pathological-booleans.csv
-target/release/graphql-static-analysis-benchmark cost-schema-size > cost-schema.csv
-target/release/graphql-static-analysis-benchmark cost-query-size > cost-query.csv
-python3 scaling.py schema.csv query.csv cost-schema.csv cost-query.csv
+  > ../.scratch/direct/pathological-booleans.csv
+target/release/graphql-static-analysis-benchmark cost-schema-size > ../.scratch/direct/cost-schema.csv
+target/release/graphql-static-analysis-benchmark cost-query-size > ../.scratch/direct/cost-query.csv
+python3 scaling.py ../.scratch/direct/schema.csv ../.scratch/direct/query.csv \
+  ../.scratch/direct/cost-schema.csv ../.scratch/direct/cost-query.csv
 ```
 
 For the paper campaign, randomize every backend/axis/size point and run each in a fresh

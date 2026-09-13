@@ -17,7 +17,9 @@ check the executable definitions' placement of parent field transfers.
 
 All Lean names below refer to the pinned revision, in
 `GraphQL/Theories/TreeSummary/{Core,ExactCases}.lean`. Rust source is in
-[`src/engine/exact_cases.rs`](../src/engine/exact_cases.rs) unless stated otherwise.
+[`src/engine/exact_cases/`](../src/engine/exact_cases/) unless stated otherwise.
+The later [organization guide](engine-architecture.md) maps the split modules and
+shared helpers while this report retains the original measurements.
 
 | Lean definition | Rust implementation | Required correspondence |
 | --- | --- | --- |
@@ -209,6 +211,10 @@ the symbolic large-schema case to investigate its variation. No numerical speedu
 claimed for these unimplemented suggestions.
 
 ## Recommended organization
+
+These recommendations are implemented in the organizational follow-up; see the
+[current module map](engine-architecture.md) and
+[maintained measurement workflow](../benchmarks/README.md#captured-beforeafter-comparisons).
 
 - Split `exact_cases.rs` into internal `cursor`, `forest`, and `decision` modules,
   with a small entry-point module. This matches the Lean namespaces and makes the

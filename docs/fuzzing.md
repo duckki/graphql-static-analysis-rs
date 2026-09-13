@@ -185,6 +185,10 @@ coverage, and enforce a 90% region, function, and line floor over `src/engine`:
 fuzz/scripts/coverage.sh
 ```
 
+The script discovers engine Rust sources recursively, including the split ExactCase,
+possible-type, variable, and field-group modules. Test-only `tests.rs` is excluded;
+moving an implementation into a new module does not remove it from the coverage gate.
+
 Rust currently emits no branch counters in this setup, so LLVM regions are the closest
 available control-flow metric. Inspect uncovered regions rather than treating the
 percentage as proof of correctness. Defensive impossible-schema paths and
@@ -257,6 +261,15 @@ The unfiltered deterministic runner and retained differential corpus are expecte
 remain green. Do not weaken or remove minimized cases to hide a future disagreement;
 update this status only when the Rust behavior or pinned Lean model intentionally
 changes.
+
+The subsequent [organizational refactor](engine-architecture.md) preserves both
+observations and evaluator schedules. Its shared child-output helper retains the
+existing runtime-parent/field-occurrence lookup and output deduplication order;
+representative-only lookup remains a separate performance proposal.
+Both deterministic comparisons remain green after the split (15,840 standard cases
+and 2,979 schedules). A fresh 4,748-input coverage replay includes all eleven engine
+implementation files and passes the unchanged gate: 91.86% regions, 96.69% functions,
+and 93.88% lines. These totals reflect the new module/helper layout.
 
 ## Repository hygiene
 

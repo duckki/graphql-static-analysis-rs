@@ -7,6 +7,13 @@ conditions; timings from different machines are not directly comparable.
 The standalone runner is in [`../benchmarks/`](../benchmarks/). This document is the
 canonical guide for running it and recording baselines.
 
+For new comparisons, use the maintained
+[capture, comparison, and profiling tools](../benchmarks/README.md#captured-beforeafter-comparisons).
+They freeze release artifacts with source/binary hashes before measuring, preserve
+the benchmark boundary below, and record alternating process runs. Existing baseline
+tables remain historical measurements of their identified binaries; the organizational
+refactor and tooling checks do not establish a new performance baseline.
+
 ## Benchmark boundary
 
 The benchmark times one reusable `MaxResponseSizeEstimator::estimate` or IBM

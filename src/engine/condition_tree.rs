@@ -7,11 +7,11 @@
 //! directive orders. Supplied variables prune Boolean branches known to be inactive;
 //! matching, missing, and unresolved literals remain explicit for backend evaluation.
 
+use super::possible_types::PossibleTypeSet;
+use super::possible_types::PossibleTypesMap;
+use super::variables::BooleanValue;
+use super::variables::VariableEnvironment;
 use super::BooleanLiteral;
-use super::BooleanValue;
-use super::PossibleTypeSet;
-use super::PossibleTypesMap;
-use super::VariableEnvironment;
 use apollo_compiler::ast::DirectiveList;
 use apollo_compiler::ast::Value;
 use apollo_compiler::collections::HashMap;
@@ -499,7 +499,7 @@ fn erase_path_cycles(path: &[(BranchCondition, Condition)]) -> Vec<(BranchCondit
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::build_possible_types;
+    use crate::engine::possible_types::build_possible_types;
     use apollo_compiler::response::serde_json_bytes::json;
     use apollo_compiler::ExecutableDocument;
     use apollo_compiler::Schema;

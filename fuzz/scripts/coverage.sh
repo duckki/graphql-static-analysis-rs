@@ -30,12 +30,13 @@ tail -n 3 "$coverage_log"
 
 binary="$repo_root/target/$target_triple/coverage/$target_triple/release/rust_only"
 profile="$fuzz_root/coverage/rust_only/coverage.profdata"
+engine_sources=()
+while IFS= read -r source; do
+  engine_sources+=(--sources "$source")
+done < <(find "$repo_root/src/engine" -name '*.rs' ! -name 'tests.rs' | sort)
 report="$($llvm_cov report "$binary" -instr-profile="$profile" \
   --show-instantiation-summary=false --show-branch-summary=false \
-  --sources "$repo_root/src/engine/condition_tree.rs" \
-  --sources "$repo_root/src/engine/exact_cases.rs" \
-  --sources "$repo_root/src/engine/mod.rs" \
-  --sources "$repo_root/src/engine/syntactic.rs")"
+  "${engine_sources[@]}")"
 printf '%s\n' "$report"
 
 read -r region_coverage function_coverage line_coverage < <(
