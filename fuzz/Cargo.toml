@@ -34,3 +34,7 @@ path = "runners/differential.rs"
 [[example]]
 name = "generate_coverage_corpus"
 path = "runners/generate_coverage_corpus.rs"
+
+[[example]]
+name = "schedule_alignment"
+path = "runners/schedule_alignment.rs"

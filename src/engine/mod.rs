@@ -116,9 +116,12 @@ impl CollectedFieldGroup {
 /// operation with `empty` as its identity and least value. `join(left, right)` must
 /// bound both inputs, and `combine` must be monotone with respect to that bound. The
 /// syntactic backend evaluates each distinct materializable type-condition product;
-/// it does not compare summary values or require `join` to be idempotent. Exact-case
-/// factoring additionally assumes that delaying `combine` and `field` across a
-/// `join` remains a sound upper bound.
+/// it does not compare summary values or require `join` to be idempotent. Without
+/// request variables, exact-case factoring additionally assumes that delaying
+/// `combine` and `field` across a `join` remains a sound upper bound. With supplied
+/// variables, ExactCase batches active type conditions and joins their regions in
+/// right-associated order. These two schedules need not produce identical terms
+/// for an algebra whose `join` is non-associative.
 pub trait Algebra {
     /// A summary can be reused across multiple runtime alternatives. Implementations
     /// should therefore make cloning cheap (for example, an `Rc`-backed expression).
@@ -1153,6 +1156,172 @@ mod tests {
                 .unwrap();
             assert_eq!(summary, "(a|(b|c))");
         }
+    }
+
+    #[test]
+    fn supplied_exact_cases_batch_overlapping_type_regions_before_joining() {
+        let schema = Schema::parse_and_validate(
+            r#"
+            type Query { node: Node }
+            interface Node { value: Int }
+            interface I { value: Int }
+            interface J { value: Int }
+            type A implements Node & I & J { value: Int }
+            type B implements Node & I { value: Int }
+            type C implements Node & J { value: Int }
+            type D implements Node { value: Int }
+            "#,
+            "schema.graphql",
+        )
+        .unwrap();
+        let document = ExecutableDocument::parse_and_validate(
+            &schema,
+            "{ node { base: value ... on I { i: value } ... on J { j: value } } }",
+            "query.graphql",
+        )
+        .unwrap();
+        let operation = document.operations.get(None).unwrap();
+        let analyzer = Analyzer::new(&schema);
+        let analysis = analyzer.operation(&document, operation);
+
+        // An empty supplied map still selects the closed-request evaluator. Its
+        // joinMap schedule deliberately differs from the symbolic binary cursor.
+        let supplied = analysis
+            .variable_values(valid(&JsonMap::default()))
+            .analyze(&JoinTrace)
+            .unwrap();
+        assert_eq!(supplied, "(base+i+j|(base+i|(base+j|base)))");
+        let symbolic = analyzer
+            .operation(&document, operation)
+            .analyze(&JoinTrace)
+            .unwrap();
+        assert_eq!(symbolic, "((base+i+j|base+i)|(base+j|base))");
+    }
+
+    #[test]
+    fn symbolic_child_alternatives_keep_parent_field_transfers_separate() {
+        struct WrappedFieldTrace;
+        impl Algebra for WrappedFieldTrace {
+            type Summary = String;
+
+            fn empty(&self) -> Self::Summary {
+                String::new()
+            }
+
+            fn field(&self, group: &CollectedFieldGroup, children: Self::Summary) -> Self::Summary {
+                format!("{}{{{children}}}", group.response_name())
+            }
+
+            fn combine(&self, left: Self::Summary, right: Self::Summary) -> Self::Summary {
+                JoinTrace.combine(left, right)
+            }
+
+            fn join(&self, left: Self::Summary, right: Self::Summary) -> Self::Summary {
+                JoinTrace.join(left, right)
+            }
+        }
+
+        fn assert_schedules(schema: &str, query: &str, symbolic: &str, complete: &str) {
+            let schema = Schema::parse_and_validate(schema, "schema.graphql").unwrap();
+            let document =
+                ExecutableDocument::parse_and_validate(&schema, query, "query.graphql").unwrap();
+            let operation = document.operations.get(None).unwrap();
+            let analyzer = Analyzer::new(&schema);
+            assert_eq!(
+                analyzer
+                    .operation(&document, operation)
+                    .analyze(&WrappedFieldTrace)
+                    .unwrap(),
+                symbolic
+            );
+            assert_eq!(
+                analyzer
+                    .operation(&document, operation)
+                    .variable_values(valid(&JsonMap::default()))
+                    .analyze(&WrappedFieldTrace)
+                    .unwrap(),
+                complete
+            );
+        }
+
+        assert_schedules(
+            "type Query { node: Node } interface Node { value: Int } \
+             type A implements Node { value: Int } type B implements Node { value: Int }",
+            "{ node { ... on A { a: value } ... on B { b: value } } }",
+            "(node{a{}}|node{b{}})",
+            "node{(a{}|b{})}",
+        );
+        // Covariant field outputs exercise the separate child-type join boundary.
+        assert_schedules(
+            "type Query { parent: Parent } \
+             interface Parent { child: Child } \
+             type AParent implements Parent { child: AChild } \
+             type BParent implements Parent { child: BChild } \
+             interface Child { value: Int } \
+             type AChild implements Child { value: Int } \
+             type BChild implements Child { value: Int }",
+            "{ parent { child { value } } }",
+            "(parent{child{value{}}}|parent{child{value{}}})",
+            "parent{child{(value{}|value{})}}",
+        );
+    }
+
+    #[test]
+    fn supplied_exact_frontiers_preserve_nested_field_order_and_boolean_context() {
+        let schema = Schema::parse_and_validate(
+            r#"
+            type Query { node: Node }
+            interface Node { value: Int }
+            interface I { value: Int }
+            interface J { value: Int }
+            type A implements Node & I & J { value: Int }
+            type B implements Node & I { value: Int }
+            type C implements Node & J { value: Int }
+            type D implements Node { value: Int }
+            "#,
+            "schema.graphql",
+        )
+        .unwrap();
+        let document = ExecutableDocument::parse_and_validate(
+            &schema,
+            r#"query($x: Boolean!, $y: Boolean!) {
+              node {
+                base: value
+                ... on I { i: value ... @include(if: $x) { ix: value } }
+                ... on J { j: value @include(if: $y) }
+              }
+            }"#,
+            "query.graphql",
+        )
+        .unwrap();
+        let operation = document.operations.get(None).unwrap();
+        let values = JsonMap::from_iter([
+            ("x".into(), JsonValue::Bool(true)),
+            ("y".into(), JsonValue::Bool(true)),
+        ]);
+        let analyzer = Analyzer::new(&schema);
+        let analysis = analyzer
+            .operation(&document, operation)
+            .variable_values(valid(&values));
+        assert_eq!(
+            analysis.analyze(&JoinTrace).unwrap(),
+            "(base+i+ix+j|(base+i+ix|(base+j|base)))"
+        );
+        let contexts = analysis.analyze(&ContextTrace).unwrap();
+        let base_contexts = contexts
+            .iter()
+            .filter(|entry| entry.response_name == "base")
+            .map(|entry| (entry.inherited.clone(), entry.local.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            base_contexts,
+            vec![
+                (vec![("x".into(), true), ("y".into(), true)], vec![]),
+                (vec![("x".into(), true)], vec![]),
+                (vec![("y".into(), true)], vec![]),
+                (vec![], vec![]),
+            ]
+        );
     }
 
     #[test]

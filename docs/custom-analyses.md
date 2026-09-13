@@ -203,8 +203,16 @@ a \preceq a \sqcup b
 b \preceq a \sqcup b
 $$
 
-ExactCases also preserves type-region alternatives beneath local Boolean decisions.
-An algebra used with ExactCases must support that factorization:
+Without supplied variables, ExactCases preserves type-region alternatives beneath
+local Boolean decisions. An algebra used with that symbolic evaluator must support
+the additional factorization laws below. With supplied variables, ExactCases resolves
+each active frontier in batches and folds its compatibility regions directly; that
+evaluator needs no Boolean decision factoring. The two schedules may associate `join`
+differently and place field transfers differently relative to child alternatives, so
+their returned terms need not be identical. Symbolic evaluation maps the parent field
+transfer over each child alternative before compacting at the completed operation
+boundary; supplied-variable evaluation joins child summaries before applying the
+parent transfer. See the [definition-alignment audit](exact-case-alignment-and-profiling.md).
 
 ### 9. Join is below every common upper bound
 

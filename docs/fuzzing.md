@@ -24,6 +24,10 @@ native process built from the Lean model, avoiding interpreter startup for each 
 case. The Rust side builds the equivalent validated schema and operation from those
 same bytes.
 
+A separate `TS2S` request uses the same decoder with an order-sensitive schedule
+observation. It supplements the four stable fuzz observations without changing their
+byte encoding or matrix sizes.
+
 | Target | Lean oracle | Purpose | Retained corpus |
 | --- | --- | --- | --- |
 | `differential` | Required | Compare Rust and Lean observations | `fuzz/corpus/differential/` |
@@ -56,7 +60,8 @@ fuzz/
     └── tree_summary/
         ├── input.rs        bounded byte decoder and case matrices
         ├── operation.rs    schema, operation grammar, and variables
-        └── observation.rs  Rust execution and canonical observations
+        ├── observation.rs  Rust execution and canonical observations
+        └── schedule.rs     order-sensitive ExactCase definition audit
 ```
 
 The deterministic runners are explicitly registered as Cargo examples, so
@@ -117,6 +122,37 @@ Preserve the reported hex input, mode, observation, rendered schema and operatio
 variables, and both results when diagnosing a mismatch. Minimize a genuine regression
 and add a descriptively named seed to the appropriate retained corpus.
 
+### ExactCase schedule alignment
+
+The canonical trace sorts and flattens alternatives, so it cannot detect every change
+in where `join` occurs relative to a parent `field` transfer. Run the complementary
+audit after changing ExactCase scheduling:
+
+```sh
+cargo run --manifest-path fuzz/Cargo.toml --example schedule_alignment -- \
+  fuzz/target/tree-summary-lean-oracle
+```
+
+This checks 2,979 ExactCase inputs: the exhaustive matrix with duplicate observation
+variants removed, plus ExactCase inputs from deterministic seeds 1 through 2,000.
+The schedule algebra normalizes `combine` identity and associativity using list
+append, but preserves binary `join` nesting, field order, recursive child terms, and
+group annotations. Set-like annotations are sorted. This is an executable-definition
+diagnostic, not a new soundness algebra: it intentionally also detects some ordering
+changes that lawful commutative `combine` implementations cannot observe. Named
+fragments remain covered by the Rust-only lane.
+
+Replay the premature child-join regression directly with:
+
+```sh
+cargo run --manifest-path fuzz/Cargo.toml --example schedule_alignment -- \
+  fuzz/target/tree-summary-lean-oracle --input-hex 070000000000
+```
+
+The same input already belongs to the deterministic matrix. A Rust unit regression,
+`symbolic_child_alternatives_keep_parent_field_transfers_separate`, independently
+checks the parent-transfer boundary without requiring Lean.
+
 ## Coverage-guided campaigns
 
 Run the differential target with a persistent oracle:
@@ -176,19 +212,46 @@ cargo fmt --manifest-path fuzz/Cargo.toml --check
 
 ## Current alignment status
 
-The current Rust engine was rechecked on 2026-09-01 against Lean commit
-`a0d1ba3c7cb3306b0bb21775272716c5e9d809e5`
-(`Improve tree-summary analysis using representativeField`):
+The current Rust engine was rechecked on 2026-09-13 against Lean commit
+`4102b52fef79782145ffef7401c393319edc4f16`
+(`Optimize ExactCases summary`):
 
 - all 15,840 deterministic ExactCase/Syntactic and max/cases/trace/cost profiles agree;
+- all 2,979 order-sensitive ExactCase schedules agree after retaining symbolic child
+  joins until parent transfers have run; the previous Rust implementation compacted
+  two child leaves prematurely, which the four canonical observations did not detect;
 - minimized input `--input-hex 6162` verifies that a complete request missing `$x`
   selects the modeled Boolean `false` behavior;
 - minimized input `--input-hex 010200000200` verifies inherited exact-case Boolean
   context in the recursive trace;
 - field analyses use one representative occurrence's validated field name and
   equivalent arguments while retaining per-runtime-parent schema lookup;
-- the ExactCase implementation uses the model's incremental branch-local cursor,
-  binary Boolean decisions, structural joins, and completed-boundary compaction.
+- without supplied variables, ExactCase retains the model's incremental branch-local
+  cursor, binary Boolean decisions, structural joins, and completed-boundary compaction;
+- with supplied variables (including an empty map), ExactCase uses the batched
+  `CaseForest` scheduler: it partitions the entire active type frontier, resolves
+  Boolean-only frontiers directly, preserves field occurrence order, and folds
+  completed region summaries without a Boolean decision tree or persistent cursor;
+- regression tests check the forest's right-associated region joins and nested field
+  order, as well as isolation of inherited Boolean assignments between type regions.
+
+The supplied-variable scheduler intentionally follows the new model's join schedule.
+An arbitrary algebra can produce different join/field terms from the earlier cursor
+even when numeric max/cost observations are unchanged. The symbolic and
+supplied-variable evaluators have separate soundness contracts in Lean; do not assert
+term equality between them as a generic optimization invariant.
+
+Validation of the initial forest port, before the additional symbolic scheduling fix,
+also replayed the 4,748-input coverage corpus (91.33% engine
+regions, 94.02% functions, 93.82% lines), ran separate 30-second campaigns with 18,463
+differential and 1,181 Rust-only executions, and passed the end-to-end mutation
+sentinel. Both retained seed directories remain unchanged. These bounded campaigns
+are additional evidence, not a claim of exhaustive coverage of the structural IR.
+The subsequent scheduling fix passed the full Rust test suite, both packages' Clippy
+checks, both deterministic oracle checks above, and a fresh 4,748-input coverage
+replay (91.60% engine regions, 95.05% functions, 93.72% lines). The
+[alignment and profiling report](exact-case-alignment-and-profiling.md) records the
+definition correspondence, the mismatch, and the final release profile.
 
 The unfiltered deterministic runner and retained differential corpus are expected to
 remain green. Do not weaken or remove minimized cases to hide a future disagreement;

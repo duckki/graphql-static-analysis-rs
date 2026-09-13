@@ -1,14 +1,16 @@
 //! Exact-case compatibility-region traversal.
 //!
-//! This backend mirrors Lean's incremental `ExactCases.CaseCursor`. It processes one
-//! condition branch at a time, partitions only the current type region, and preserves
-//! type alternatives as factored joins below correlated Boolean decisions.
+//! Without request variables, Lean's incremental `ExactCases.CaseCursor` preserves
+//! type alternatives as factored joins below correlated Boolean decisions. Supplied
+//! variables use `ExactCases.CaseForest`: resolve the entire active frontier for each
+//! compatibility region, then fold completed fields directly into summaries.
 
 use super::condition_tree::canonical_boolean_condition;
 use super::condition_tree::Branch;
 use super::condition_tree::BranchCondition;
 use super::condition_tree::ConditionTree;
 use super::condition_tree::NodeId;
+use super::possible_type_regions;
 use super::Algebra;
 use super::BooleanLiteral;
 use super::BooleanValue;
@@ -275,6 +277,8 @@ impl<S: Clone> BooleanDecision<S> {
         }
     }
 
+    // Only use while compacting the completed operation. A Leaf can still have
+    // pending parent field transfers during recursive child evaluation.
     fn join_cases(self, right: Self, join: &impl Fn(S, S) -> S) -> Self {
         match (self, right) {
             (Self::Leaf(left), Self::Leaf(right)) => Self::Leaf(join(left, right)),
@@ -414,6 +418,90 @@ struct CaseConditionEntry {
 struct CompleteBooleanAssignment<'tree> {
     variable_name: &'tree Name,
     required_value: bool,
+}
+
+/// Arena references to Lean's active trees. A resolved entry retains its fields but
+/// no longer contributes branches. Children are inserted immediately after their
+/// parent, preserving field occurrence order across successive batched frontiers.
+struct CaseForest {
+    active_trees: Vec<ActiveTree>,
+}
+
+struct ActiveTree {
+    node_id: NodeId,
+    unresolved: bool,
+}
+
+impl CaseForest {
+    fn of_condition_tree(tree: &ConditionTree) -> Self {
+        Self {
+            active_trees: vec![ActiveTree {
+                node_id: tree.root(),
+                unresolved: true,
+            }],
+        }
+    }
+
+    fn branches<'a, 'tree: 'a>(
+        &'a self,
+        tree: &'tree ConditionTree,
+    ) -> impl Iterator<Item = &'tree Branch> + 'a {
+        self.active_trees.iter().flat_map(move |active| {
+            if active.unresolved {
+                tree.node(active.node_id).branches.as_slice()
+            } else {
+                &[]
+            }
+        })
+    }
+
+    fn resolve_branches(
+        &self,
+        tree: &ConditionTree,
+        region: &PossibleTypeRegion,
+        variables: &VariableEnvironment<'_>,
+    ) -> Self {
+        let representative = region.ordered[0];
+        let mut active_trees = Vec::with_capacity(self.active_trees.len());
+        for active in &self.active_trees {
+            let node = tree.node(active.node_id);
+            // A resolved fieldless tree contributes nothing to later frontiers.
+            if !node.fields.is_empty() {
+                active_trees.push(ActiveTree {
+                    node_id: active.node_id,
+                    unresolved: false,
+                });
+            }
+            if !active.unresolved {
+                continue;
+            }
+            for branch in &node.branches {
+                let selected = match &branch.condition {
+                    // The frontier partition makes membership uniform in a region.
+                    BranchCondition::Type(_) => tree
+                        .node(branch.body)
+                        .condition
+                        .possible_types
+                        .bits
+                        .contains(representative),
+                    BranchCondition::Boolean(literal) => {
+                        let value = match variables.boolean(&literal.variable_name) {
+                            BooleanValue::Known(value) => value,
+                            BooleanValue::Missing | BooleanValue::Unknown => false,
+                        };
+                        literal.required_value == value
+                    }
+                };
+                if selected {
+                    active_trees.push(ActiveTree {
+                        node_id: branch.body,
+                        unresolved: true,
+                    });
+                }
+            }
+        }
+        Self { active_trees }
+    }
 }
 
 fn case_condition_value(condition: &CaseCondition, variable_name: &Name) -> Option<bool> {
@@ -568,17 +656,20 @@ enum CompleteFieldGroups {
     Indexed(IndexMap<Name, Vec<Node<executable::Field>>>),
 }
 
-fn complete_field_groups(tree: &ConditionTree, node_ids: &[NodeId]) -> CompleteFieldGroups {
+fn complete_field_groups(
+    tree: &ConditionTree,
+    node_ids: impl Iterator<Item = NodeId> + Clone,
+) -> CompleteFieldGroups {
     let group_capacity = node_ids
-        .iter()
-        .map(|&node_id| tree.node(node_id).fields.len())
+        .clone()
+        .map(|node_id| tree.node(node_id).fields.len())
         .sum();
     let mut single_name = None;
     let mut single_fields = Vec::new();
     let mut linear: Option<Vec<Vec<Node<executable::Field>>>> = None;
     let mut indexed: Option<IndexMap<Name, Vec<Node<executable::Field>>>> = None;
 
-    for &node_id in node_ids {
+    for node_id in node_ids {
         for (response_name, fields) in &tree.node(node_id).fields {
             if let Some(groups) = &mut indexed {
                 groups
@@ -702,89 +793,42 @@ impl<A: Algebra> Engine<'_, '_, A> {
             return self.algebra.empty();
         };
         let scope = tree.node(tree.root()).condition.possible_types.clone();
-        let mut selected_field_nodes = Vec::with_capacity(tree.nodes.len().min(16));
-        selected_field_nodes.push(tree.root());
-        let mut case_condition = Vec::with_capacity(tree.nodes.len().min(8));
-        self.summarize_complete_decision(
+        self.summarize_complete_forest(
             &tree,
-            &mut selected_field_nodes,
-            prepend_pending_branches(&tree.node(tree.root()).branches, None),
+            CaseForest::of_condition_tree(&tree),
             &PossibleTypeRegion::from(&scope),
             inherited_boolean_condition,
-            &mut case_condition,
+            &mut Vec::with_capacity(tree.nodes.len().min(8)),
         )
     }
 
-    fn summarize_complete_decision<'tree>(
+    fn summarize_complete_forest<'tree>(
         &self,
         tree: &'tree ConditionTree,
-        selected_field_nodes: &mut Vec<NodeId>,
-        mut pending_branches: Option<PendingBranches<'tree>>,
+        mut forest: CaseForest,
         possible_types: &PossibleTypeRegion,
         inherited_boolean_condition: &[BooleanLiteral],
         case_condition: &mut Vec<CompleteBooleanAssignment<'tree>>,
     ) -> A::Summary {
         loop {
-            let Some(pending) = &pending_branches else {
+            if forest.branches(tree).next().is_none() {
                 return self.summarize_complete_field_groups(
                     tree,
-                    selected_field_nodes,
+                    &forest,
                     possible_types,
                     inherited_boolean_condition,
                     case_condition,
                 );
-            };
-            let branch = pending.branch();
-            let rest = pending.rest();
+            }
 
-            match &branch.condition {
-                BranchCondition::Type(_) => {
-                    let body = tree.node(branch.body);
-                    let allowed = &body.condition.possible_types;
-                    match partition_type_region(possible_types, allowed) {
-                        TypeRegionPartition::Selected => {
-                            if !body.fields.is_empty() {
-                                selected_field_nodes.push(branch.body);
-                            }
-                            pending_branches = prepend_pending_branches(&body.branches, rest);
-                        }
-                        TypeRegionPartition::Rejected => {
-                            pending_branches = rest;
-                        }
-                        TypeRegionPartition::Split { selected, rejected } => {
-                            let selected_field_count = selected_field_nodes.len();
-                            let selected_condition_count = case_condition.len();
-                            if !body.fields.is_empty() {
-                                selected_field_nodes.push(branch.body);
-                            }
-                            let selected = self.summarize_complete_decision(
-                                tree,
-                                selected_field_nodes,
-                                prepend_pending_branches(&body.branches, rest.clone()),
-                                &selected,
-                                inherited_boolean_condition,
-                                case_condition,
-                            );
-                            selected_field_nodes.truncate(selected_field_count);
-                            case_condition.truncate(selected_condition_count);
-                            let rejected = self.summarize_complete_decision(
-                                tree,
-                                selected_field_nodes,
-                                rest,
-                                &rejected,
-                                inherited_boolean_condition,
-                                case_condition,
-                            );
-                            return self.algebra.join(selected, rejected);
-                        }
-                    }
-                }
-                BranchCondition::Boolean(literal) => {
-                    let existing = case_condition
+            // Record every Boolean seen at this frontier before choosing a region,
+            // including implicit false values and branches rejected by that region.
+            for branch in forest.branches(tree) {
+                if let BranchCondition::Boolean(literal) = &branch.condition {
+                    if !case_condition
                         .iter()
-                        .find(|current| *current.variable_name == literal.variable_name)
-                        .map(|current| current.required_value);
-                    let value = existing.unwrap_or_else(|| {
+                        .any(|current| *current.variable_name == literal.variable_name)
+                    {
                         let value = match self.variables.boolean(&literal.variable_name) {
                             BooleanValue::Known(value) => value,
                             BooleanValue::Missing | BooleanValue::Unknown => false,
@@ -793,31 +837,73 @@ impl<A: Algebra> Engine<'_, '_, A> {
                             variable_name: &literal.variable_name,
                             required_value: value,
                         });
-                        value
-                    });
-                    if literal.required_value == value {
-                        let body = tree.node(branch.body);
-                        if !body.fields.is_empty() {
-                            selected_field_nodes.push(branch.body);
-                        }
-                        pending_branches = prepend_pending_branches(&body.branches, rest);
-                    } else {
-                        pending_branches = rest;
                     }
                 }
             }
+
+            let regions = {
+                let mut conditions = forest
+                    .branches(tree)
+                    .filter(|branch| matches!(branch.condition, BranchCondition::Type(_)))
+                    .map(|branch| &tree.node(branch.body).condition.possible_types);
+                conditions.next().map(|first| {
+                    possible_type_regions(possible_types, std::iter::once(first).chain(conditions))
+                })
+            };
+            let Some(regions) = regions else {
+                // A Boolean-only frontier needs no type partition or scope copy.
+                forest = forest.resolve_branches(tree, possible_types, &self.variables);
+                continue;
+            };
+            if regions.len() == 1 {
+                // Uniform type frontiers also advance without a recursive frame
+                // or a synthetic alternative join.
+                forest = forest.resolve_branches(tree, possible_types, &self.variables);
+                continue;
+            }
+
+            let condition_count = case_condition.len();
+            let mut regions = regions.into_iter().rev();
+            let Some(region) = regions.next() else {
+                return self.algebra.empty();
+            };
+            let mut summary = self.summarize_complete_forest(
+                tree,
+                forest.resolve_branches(tree, &region, &self.variables),
+                &region,
+                inherited_boolean_condition,
+                case_condition,
+            );
+            case_condition.truncate(condition_count);
+            for region in regions {
+                let left = self.summarize_complete_forest(
+                    tree,
+                    forest.resolve_branches(tree, &region, &self.variables),
+                    &region,
+                    inherited_boolean_condition,
+                    case_condition,
+                );
+                case_condition.truncate(condition_count);
+                // Lean's joinMap is right-associated, even for non-associative
+                // algebras. Do not retain the old cursor's binary split nesting.
+                summary = self.algebra.join(left, summary);
+            }
+            return summary;
         }
     }
 
     fn summarize_complete_field_groups(
         &self,
         tree: &ConditionTree,
-        selected_field_nodes: &[NodeId],
+        forest: &CaseForest,
         possible_types: &PossibleTypeRegion,
         inherited_boolean_condition: &[BooleanLiteral],
         case_condition: &[CompleteBooleanAssignment<'_>],
     ) -> A::Summary {
-        let field_groups = complete_field_groups(tree, selected_field_nodes);
+        let field_groups = complete_field_groups(
+            tree,
+            forest.active_trees.iter().map(|active| active.node_id),
+        );
         if matches!(field_groups, CompleteFieldGroups::Empty) {
             return self.algebra.empty();
         }
@@ -1012,9 +1098,13 @@ impl<A: Algebra> Engine<'_, '_, A> {
                                 variable_order,
                                 &environment,
                             );
-                            return selected.join_cases(rejected, &|left, right| {
-                                self.algebra.join(left, right)
-                            });
+                            // Parent field transfers still need to map over each
+                            // alternative. Lean retains this join until the completed
+                            // operation boundary, even when both children are leaves.
+                            return BooleanDecision::Join {
+                                left: Box::new(selected),
+                                right: Box::new(rejected),
+                            };
                         }
                     }
                 }
@@ -1172,7 +1262,10 @@ impl<A: Algebra> Engine<'_, '_, A> {
             return BooleanDecision::Leaf(self.algebra.empty());
         };
         for decision in decisions {
-            joined = decision.join_cases(joined, &|left, right| self.algebra.join(left, right));
+            joined = BooleanDecision::Join {
+                left: Box::new(decision),
+                right: Box::new(joined),
+            };
         }
         joined
     }
