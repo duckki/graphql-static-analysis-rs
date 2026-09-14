@@ -14,6 +14,11 @@ the benchmark boundary below, and record alternating process runs. Existing base
 tables remain historical measurements of their identified binaries; the organizational
 refactor and tooling checks do not establish a new performance baseline.
 
+The subsequent [list-shape optimization report](response-size-list-shape-performance.md)
+records the comparison against clean organizational revision `87d8e9a`, including
+full-axis scaling fits and profiles. It replaces repeated runtime-parent multiplier
+lookups with the validated executable field's list shape.
+
 ## Benchmark boundary
 
 The benchmark times one reusable `MaxResponseSizeEstimator::estimate` or IBM

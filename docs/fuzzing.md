@@ -229,7 +229,8 @@ The current Rust engine was rechecked on 2026-09-13 against Lean commit
 - minimized input `--input-hex 010200000200` verifies inherited exact-case Boolean
   context in the recursive trace;
 - field analyses use one representative occurrence's validated field name and
-  equivalent arguments while retaining per-runtime-parent schema lookup;
+  equivalent arguments; child output types and IBM cost retain per-runtime-parent
+  lookup, while response size uses the validated field's invariant list depth;
 - without supplied variables, ExactCase retains the model's incremental branch-local
   cursor, binary Boolean decisions, structural joins, and completed-boundary compaction;
 - with supplied variables (including an empty map), ExactCase uses the batched
@@ -270,6 +271,16 @@ Both deterministic comparisons remain green after the split (15,840 standard cas
 and 2,979 schedules). A fresh 4,748-input coverage replay includes all eleven engine
 implementation files and passes the unchanged gate: 91.86% regions, 96.69% functions,
 and 93.88% lines. These totals reflect the new module/helper layout.
+
+The subsequent [response-size list-shape optimization](response-size-list-shape-performance.md)
+removes runtime-parent multiplier scans without changing either evaluator. The
+production estimator still agrees on all 15,840 standard profiles and all 2,979
+schedules. A regression additionally covers covariant output types and nullability,
+nested lists, merged child selections, zero bounds, and saturation in all four
+backend/variable configurations. Lean's maximum fold starts at 1; the optimized
+calculation preserves that floor even for a zero list bound. The oracle revision
+and both retained corpora remain unchanged; the coverage totals above describe the
+organizational refactor, not a new coverage campaign.
 
 ## Repository hygiene
 

@@ -56,10 +56,7 @@ impl<'schema> MaxResponseSizeEstimator<'schema> {
         list_size: u64,
         variable_values: Option<&'analysis Valid<JsonMap>>,
     ) -> Result<u64, AnalysisError> {
-        let algebra = MaxResponseSizeAlgebra {
-            schema: self.analyzer.schema(),
-            list_size,
-        };
+        let algebra = MaxResponseSizeAlgebra { list_size };
         let analysis = self
             .analyzer
             .operation(document, operation)
@@ -89,12 +86,11 @@ pub fn estimate(
     )
 }
 
-struct MaxResponseSizeAlgebra<'schema> {
-    schema: &'schema Schema,
+struct MaxResponseSizeAlgebra {
     list_size: u64,
 }
 
-impl Algebra for MaxResponseSizeAlgebra<'_> {
+impl Algebra for MaxResponseSizeAlgebra {
     type Summary = u64;
 
     fn empty(&self) -> Self::Summary {
@@ -117,19 +113,14 @@ impl Algebra for MaxResponseSizeAlgebra<'_> {
     }
 }
 
-impl MaxResponseSizeAlgebra<'_> {
+impl MaxResponseSizeAlgebra {
     fn field_list_multiplier(&self, group: &CollectedFieldGroup) -> u64 {
-        let field = group.representative_field();
-        group
-            .possible_types
-            .iter()
-            .filter_map(|parent_type| {
-                self.schema
-                    .type_field(parent_type, &field.name)
-                    .ok()
-                    .map(|definition| list_multiplier(self.list_size, &definition.ty))
-            })
-            .fold(1, u64::max)
+        // Validated interface implementations and merged fields preserve list
+        // depth, even when their named output types or nullability differ. The
+        // executable definition therefore gives the multiplier for every runtime
+        // parent without scanning them. Keep Lean's fold seed of 1 when the list
+        // bound is zero.
+        list_multiplier(self.list_size, &group.representative_field().definition.ty).max(1)
     }
 }
 
@@ -206,6 +197,33 @@ mod tests {
                 estimate_query(NESTED_SCHEMA, "{ node { name } }", mode, 10, None),
                 2,
             );
+        }
+    }
+
+    #[test]
+    fn list_depth_is_preserved_by_covariant_runtime_outputs() {
+        let schema = r#"
+            type Query { source: Source }
+            interface Item { name: String }
+            type Product implements Item { name: String! }
+            interface Source { items: [[Item]] }
+            interface RefinedSource implements Source { items: [[Item!]!]! }
+            type Shop implements Source & RefinedSource { items: [[Product!]!]! }
+            type Archive implements Source { items: [[Item]] }
+        "#;
+        let query = r#"
+            { source { rows: items { first: name } rows: items { second: name } } }
+        "#;
+        let supplied = JsonMap::new();
+        for mode in [AnalysisMode::Syntactic, AnalysisMode::ExactCase] {
+            for variables in [None, Some(&supplied)] {
+                for (list_size, expected) in [(0, 4), (1, 4), (3, 20), (u64::MAX, u64::MAX)] {
+                    assert_eq!(
+                        estimate_query(schema, query, mode, list_size, variables),
+                        expected,
+                    );
+                }
+            }
         }
     }
 
