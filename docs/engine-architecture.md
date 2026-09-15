@@ -23,7 +23,7 @@ src/engine/
 
 ## Correspondence with Lean
 
-The reference is Lean revision `4102b52fef79782145ffef7401c393319edc4f16`, in
+The reference is merged Lean revision `41f1c4a240c30419c4ba0ffcdfeae612ee4d5810`, in
 `GraphQL/Theories/TreeSummary/Core.lean` and `ExactCases.lean`.
 
 | Rust module | Lean definitions / responsibility |

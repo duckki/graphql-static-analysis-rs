@@ -1,5 +1,9 @@
 # Response-size list-shape optimization (2026-09-13)
 
+The measurements below retain their original Lean revision and binary provenance.
+The subsequent [2026-09-14 release audit](release-readiness-audit.md) checks Rust
+against Lean's new executable shortcut and its equivalence proofs at `41f1c4a`.
+
 `MaxResponseSizeAlgebra` now computes a field's list multiplier from its executable
 field definition. Previously it looked up that field separately for every possible
 runtime parent and took the maximum multiplier. This removes a scan over the type

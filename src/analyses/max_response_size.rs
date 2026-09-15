@@ -119,7 +119,9 @@ impl MaxResponseSizeAlgebra {
         // depth, even when their named output types or nullability differ. The
         // executable definition therefore gives the multiplier for every runtime
         // parent without scanning them. Keep Lean's fold seed of 1 when the list
-        // bound is zero.
+        // bound is zero. This is Lean's fieldListMultiplierForDefinition; its
+        // fieldListMultiplier_eq_forDefinition theorem relates it to the first
+        // runtime-parent lookup used by the executable Lean model.
         list_multiplier(self.list_size, &group.representative_field().definition.ty).max(1)
     }
 }
@@ -240,6 +242,30 @@ mod tests {
                 ),
                 3,
             );
+        }
+    }
+
+    #[test]
+    fn abstract_output_without_runtime_objects_has_no_child_contribution() {
+        let schema = r#"
+            type Query { nodes: [[Empty]] }
+            interface Empty { children: [[Node]] }
+            type Node { name: String }
+        "#;
+        let supplied = JsonMap::new();
+        for mode in [AnalysisMode::Syntactic, AnalysisMode::ExactCase] {
+            for variables in [None, Some(&supplied)] {
+                assert_eq!(
+                    estimate_query(
+                        schema,
+                        "{ nodes { children { name } } }",
+                        mode,
+                        u64::MAX,
+                        variables,
+                    ),
+                    1,
+                );
+            }
         }
     }
 

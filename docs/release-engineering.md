@@ -127,7 +127,6 @@ cargo test --all-targets
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
 cargo +1.90.0 test --all-targets
 cargo package
-cargo publish --dry-run
 cargo package --list
 ```
 
@@ -135,6 +134,13 @@ The `+1.90.0` check must track the `rust-version` declared in `Cargo.toml`. The 
 must contain the library source, public examples, README, license, and consumer-facing
 documentation. It must not contain fuzzing artifacts, benchmarks, internal release or
 performance notes, repository automation, secrets, or generated scratch files.
+
+`Cargo.toml` uses an explicit package `include` list for this boundary. Keep links from
+the packaged README and custom-analysis guide to excluded internal documents pointed
+at the repository. For local checks of uncommitted changes, copy the intended source
+to an isolated directory outside any Git checkout and run `cargo package` there.
+This verifies the archive without committing prematurely or using `--allow-dirty`;
+it does not replace CI on the reviewed release commit.
 
 Merge the release PR with GitHub's **Create a merge commit** strategy. Release-plz can
 handle other strategies, but a merge commit lets it identify the exact reviewed PR tip

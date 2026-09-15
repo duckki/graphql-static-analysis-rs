@@ -84,7 +84,9 @@ rustup component add llvm-tools-preview --toolchain nightly
 
 ## Build the Lean oracle
 
-Build a native oracle from the Lean checkout whose behavior is under test:
+Build a native oracle from a clean Lean checkout at the revision pinned by
+[`LEAN_MODEL_COMMIT`](../fuzz/src/tree_summary/input.rs). The current revision is
+recorded in [Current alignment status](#current-alignment-status) below:
 
 ```sh
 fuzz/scripts/build-oracle.sh /path/to/graphql-lean
@@ -158,6 +160,7 @@ checks the parent-transfer boundary without requiring Lean.
 Run the differential target with a persistent oracle:
 
 ```sh
+mkdir -p fuzz/target/differential-campaign
 GRAPHQL_STATIC_ANALYSIS_LEAN_ORACLE=fuzz/target/tree-summary-lean-oracle \
   cargo +nightly fuzz run differential \
   fuzz/target/differential-campaign \
@@ -167,6 +170,7 @@ GRAPHQL_STATIC_ANALYSIS_LEAN_ORACLE=fuzz/target/tree-summary-lean-oracle \
 Run the wider Rust-only target separately:
 
 ```sh
+mkdir -p fuzz/target/rust-only-campaign
 cargo +nightly fuzz run rust_only \
   fuzz/target/rust-only-campaign \
   fuzz/corpus/rust_only
@@ -216,11 +220,12 @@ cargo fmt --manifest-path fuzz/Cargo.toml --check
 
 ## Current alignment status
 
-The current Rust engine was rechecked on 2026-09-13 against Lean commit
-`4102b52fef79782145ffef7401c393319edc4f16`
-(`Optimize ExactCases summary`):
+The current Rust engine was rechecked on 2026-09-14 against merged Lean `main` commit
+`41f1c4a240c30419c4ba0ffcdfeae612ee4d5810`
+(`Optimize exact cases (#8)`):
 
 - all 15,840 deterministic ExactCase/Syntactic and max/cases/trace/cost profiles agree;
+- another 5,000 generated profiles agree (seed `20260914`);
 - all 2,979 order-sensitive ExactCase schedules agree after retaining symbolic child
   joins until parent transfers have run; the previous Rust implementation compacted
   two child leaves prematurely, which the four canonical observations did not detect;
@@ -230,7 +235,10 @@ The current Rust engine was rechecked on 2026-09-13 against Lean commit
   context in the recursive trace;
 - field analyses use one representative occurrence's validated field name and
   equivalent arguments; child output types and IBM cost retain per-runtime-parent
-  lookup, while response size uses the validated field's invariant list depth;
+  lookup, while response size uses the validated field's invariant list depth.
+  Lean now uses its first possible runtime definition; its
+  `fieldListMultiplier_eq_forDefinition` theorem equates that lookup with Rust's
+  definition-based calculation when runtime definitions are covariant with it;
 - without supplied variables, ExactCase retains the model's incremental branch-local
   cursor, binary Boolean decisions, structural joins, and completed-boundary compaction;
 - with supplied variables (including an empty map), ExactCase uses the batched
@@ -281,6 +289,17 @@ backend/variable configurations. Lean's maximum fold starts at 1; the optimized
 calculation preserves that floor even for a zero list bound. The oracle revision
 and both retained corpora remain unchanged; the coverage totals above describe the
 organizational refactor, not a new coverage campaign.
+
+The final [2026-09-14 release-readiness audit](release-readiness-audit.md) rebuilt the
+native oracle from clean merged Lean revision `41f1c4a240c30419c4ba0ffcdfeae612ee4d5810`
+in `~/work/apollo-graphql/graphql-lean` and updated the Rust revision guard. The
+exhaustive, generated, and schedule comparisons above pass with the stale-oracle
+override unset. The previous PR revision sidecar is rejected, and both minimized
+mismatch inputs still pass. Separate 30-second campaigns completed
+26,476 differential and 1,918 Rust-only executions without failures. The mutation
+sentinel detected its intentional mismatch, and a fresh 4,748-input coverage replay
+passed with 91.86% regions, 96.69% functions, and 93.88% lines. These bounded checks
+exercise the new executable Lean multiplier; they are not a proof of Rust equivalence.
 
 ## Repository hygiene
 

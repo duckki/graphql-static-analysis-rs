@@ -147,7 +147,8 @@ let estimator = CostEstimator::new(cost_model).mode(AnalysisMode::Syntactic);
 ## Lean formalization and Rust confidence
 
 The engine is implemented from the TreeSummary formal model in
-[GraphQL.lean](https://github.com/duckki/GraphQL.lean). The Lean development connects
+[GraphQL.lean at revision `41f1c4a`](https://github.com/duckki/GraphQL.lean/tree/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810).
+The Lean development connects
 local algebra obligations to execution-level soundness. For the Lean model's
 `ExactCases` analysis, optional best-transfer contracts additionally prove that an
 estimate is the least upper bound over the modeled feasible outcomes—the best
@@ -158,7 +159,8 @@ therefore also runs deterministic and coverage-guided differential tests against
 native executable built from the Lean model. The test matrix compares response size,
 exact cases, recursively collected-field traces, and IBM cost. This provides a high
 level of confidence that the Rust engine implements the verified model faithfully;
-see [TreeSummary differential fuzzing](docs/fuzzing.md) for its scope and limitations.
+see [TreeSummary differential fuzzing](https://github.com/duckki/graphql-static-analysis-rs/blob/main/docs/fuzzing.md)
+for its scope and limitations.
 
 ## License
 

@@ -212,7 +212,8 @@ differently and place field transfers differently relative to child alternatives
 their returned terms need not be identical. Symbolic evaluation maps the parent field
 transfer over each child alternative before compacting at the completed operation
 boundary; supplied-variable evaluation joins child summaries before applying the
-parent transfer. See the [definition-alignment audit](exact-case-alignment-and-profiling.md).
+parent transfer. See the
+[definition-alignment audit](https://github.com/duckki/graphql-static-analysis-rs/blob/main/docs/exact-case-alignment-and-profiling.md).
 
 ### 9. Join is below every common upper bound
 
@@ -268,7 +269,7 @@ complementary and independent Boolean variables, and nested selection sets.
 
 A custom Rust analysis can be used without Lean. For stronger assurance, model the
 same summary domain and transfer operations in the
-[GraphQL.lean TreeSummary framework](https://github.com/duckki/GraphQL.lean/tree/main/GraphQL/Theories/TreeSummary):
+[GraphQL.lean TreeSummary framework](https://github.com/duckki/GraphQL.lean/tree/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary):
 
 1. Define a TreeSummary `Algebra` corresponding to the Rust `empty`, `field`,
    `combine`, and `join` operations.
@@ -283,13 +284,14 @@ same summary domain and transfer operations in the
 5. Add an executable observation for the Lean analysis and compare it with Rust using
    deterministic cases and differential fuzzing.
 
-The most relevant model files are
-[`Core.lean`](https://github.com/duckki/GraphQL.lean/blob/main/GraphQL/Theories/TreeSummary/Core.lean),
-[`Soundness.lean`](https://github.com/duckki/GraphQL.lean/blob/main/GraphQL/Theories/TreeSummary/Soundness.lean),
-[`ExactCases.lean`](https://github.com/duckki/GraphQL.lean/blob/main/GraphQL/Theories/TreeSummary/ExactCases.lean),
-[`ExactCasesOptimality.lean`](https://github.com/duckki/GraphQL.lean/blob/main/GraphQL/Theories/TreeSummary/ExactCasesOptimality.lean),
+The most relevant model files at the pinned merged revision `41f1c4a` are
+[`Core.lean`](https://github.com/duckki/GraphQL.lean/blob/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary/Core.lean),
+[`Soundness.lean`](https://github.com/duckki/GraphQL.lean/blob/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary/Soundness.lean),
+[`ExactCases.lean`](https://github.com/duckki/GraphQL.lean/blob/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary/ExactCases.lean),
+[`ExactCasesOptimality.lean`](https://github.com/duckki/GraphQL.lean/blob/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary/ExactCasesOptimality.lean),
 and
-[`Syntactic.lean`](https://github.com/duckki/GraphQL.lean/blob/main/GraphQL/Theories/TreeSummary/Syntactic.lean).
+[`Syntactic.lean`](https://github.com/duckki/GraphQL.lean/blob/41f1c4a240c30419c4ba0ffcdfeae612ee4d5810/GraphQL/Theories/TreeSummary/Syntactic.lean).
 
-See [TreeSummary differential fuzzing](fuzzing.md) for the Rust/Lean oracle protocol,
+See [TreeSummary differential fuzzing](https://github.com/duckki/graphql-static-analysis-rs/blob/main/docs/fuzzing.md)
+for the Rust/Lean oracle protocol,
 observations, retained corpus, and coverage workflow used by this repository.
