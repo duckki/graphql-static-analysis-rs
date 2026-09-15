@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2](https://github.com/duckki/graphql-static-analysis-rs/compare/v0.2.1...v0.2.2) - 2026-09-15
+
+### Other
+
+- finalize Lean alignment and release audit
+- Use validated list shape for response-size multipliers
+- Reorganize engine internals and maintain measurement tooling
+- Align ExactCase evaluation with Lean definitions
+
 ## [0.2.1](https://github.com/duckki/graphql-static-analysis-rs/compare/v0.2.0...v0.2.1) - 2026-09-01
 
 ### Other
