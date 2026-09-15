@@ -355,6 +355,18 @@ def traceAlgebra : Algebra :=
     join := fun left right => sortTraceCases (left ++ right)
   }
 
+/-- Audit the evaluation schedule without sorting away alternative joins or field
+order. List append normalizes the documented combine identity and associativity. -/
+def scheduleAlgebra : Algebra :=
+  {
+    Summary := List String
+    empty := []
+    field := fun group children => [traceField group children]
+    combine := List.append
+    join := fun left right =>
+      ["(" ++ String.intercalate "&" left ++ "|" ++ String.intercalate "&" right ++ ")"]
+  }
+
 def analyze (algebra : Algebra) (profile : Profile) : algebra.Summary :=
   let operation := operation profile
   let values := variableValues profile.variableCase
@@ -399,11 +411,11 @@ def parseBytes (encoded : String) : Option (List Nat) :=
   if encoded == "-" then some []
   else encoded.splitOn "," |>.mapM String.toNat?
 
-def parseRequest (line : String) : Option (String × Profile) := do
+def parseRequest (line : String) : Option (String × Profile × Bool) := do
   let [version, id, encoded] := line.splitOn " " | none
-  if version != "TS2" then none else
+  if version != "TS2" && version != "TS2S" then none else
     let bytes ← parseBytes encoded
-    some (id, profileFromBytes bytes)
+    some (id, profileFromBytes bytes, version == "TS2S")
 
 partial def serve : IO Unit := do
   let stdin ← IO.getStdin
@@ -417,7 +429,11 @@ partial def serve : IO Unit := do
       pure ()
     else
       match parseRequest line with
-      | some (id, profile) => stdout.putStrLn s!"{id}={result profile}"
+      | some (id, profile, schedule) =>
+          let output := if schedule then
+            "schedule:" ++ String.intercalate "&" (analyze scheduleAlgebra profile)
+            else result profile
+          stdout.putStrLn s!"{id}={output}"
       | none => stdout.putStrLn "error=invalid-request"
       stdout.flush
       serve

@@ -10,7 +10,7 @@ const MODE_COUNT: u8 = 2;
 pub(super) const OBSERVATION_COUNT: u8 = 4;
 const DEFAULT_CASE_COUNT: u8 = 3;
 
-pub const LEAN_MODEL_COMMIT: &str = "a0d1ba3c7cb3306b0bb21775272716c5e9d809e5";
+pub const LEAN_MODEL_COMMIT: &str = "41f1c4a240c30419c4ba0ffcdfeae612ee4d5810";
 
 // Depth, selection count, and node tokens. These are coverage seeds, not the grammar's
 // complete input space; libFuzzer may mutate every token and append more nodes.

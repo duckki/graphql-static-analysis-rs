@@ -9,17 +9,16 @@ use super::condition_tree::BranchCondition;
 use super::condition_tree::ConditionNode;
 use super::condition_tree::ConditionTree;
 use super::condition_tree::NodeId;
-use super::possible_type_regions;
+use super::possible_types::possible_type_regions;
+use super::possible_types::PossibleTypeRegion;
+use super::possible_types::PossibleTypeSet;
+use super::possible_types::PossibleTypesMap;
+use super::variables::BooleanValue;
+use super::variables::VariableEnvironment;
 use super::Algebra;
 use super::BooleanLiteral;
-use super::BooleanValue;
 use super::CollectedFieldGroup;
-use super::PossibleTypeRegion;
-use super::PossibleTypeSet;
-use super::PossibleTypesMap;
-use super::VariableEnvironment;
 use apollo_compiler::collections::IndexMap;
-use apollo_compiler::collections::IndexSet;
 use apollo_compiler::executable::ExecutableDocument;
 use apollo_compiler::executable::Operation;
 use apollo_compiler::executable::Selection;
@@ -196,22 +195,11 @@ impl<A: Algebra> Engine<'_, '_, A> {
     }
 
     fn summarize_children(&self, group: &CollectedFieldGroup) -> A::Summary {
-        if group
-            .fields
-            .iter()
-            .all(|field| field.selection_set.selections.is_empty())
-        {
+        if !group.has_child_selections() {
             return self.algebra.empty();
         }
 
-        let mut child_parent_types = IndexSet::default();
-        for runtime_type in &group.possible_types {
-            for field in &group.fields {
-                if let Ok(definition) = self.schema.type_field(runtime_type, &field.name) {
-                    child_parent_types.insert(definition.ty.inner_named_type().clone());
-                }
-            }
-        }
+        let child_parent_types = group.child_parent_types(self.schema);
 
         child_parent_types
             .into_iter()
@@ -220,10 +208,7 @@ impl<A: Algebra> Engine<'_, '_, A> {
                 let child = self.summarize_scope(
                     child_parent_type,
                     group.child_inherited_boolean_condition(),
-                    group
-                        .fields
-                        .iter()
-                        .map(|field| field.selection_set.selections.as_slice()),
+                    group.child_selection_sets(),
                 );
                 self.join_optional(Some(child), summary)
             })

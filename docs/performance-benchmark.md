@@ -7,6 +7,18 @@ conditions; timings from different machines are not directly comparable.
 The standalone runner is in [`../benchmarks/`](../benchmarks/). This document is the
 canonical guide for running it and recording baselines.
 
+For new comparisons, use the maintained
+[capture, comparison, and profiling tools](../benchmarks/README.md#captured-beforeafter-comparisons).
+They freeze release artifacts with source/binary hashes before measuring, preserve
+the benchmark boundary below, and record alternating process runs. Existing baseline
+tables remain historical measurements of their identified binaries; the organizational
+refactor and tooling checks do not establish a new performance baseline.
+
+The subsequent [list-shape optimization report](response-size-list-shape-performance.md)
+records the comparison against clean organizational revision `87d8e9a`, including
+full-axis scaling fits and profiles. It replaces repeated runtime-parent multiplier
+lookups with the validated executable field's list shape.
+
 ## Benchmark boundary
 
 The benchmark times one reusable `MaxResponseSizeEstimator::estimate` or IBM
@@ -169,3 +181,108 @@ SHA-256 manifest are archived by the companion `graphql-lean` study artifact at
 commit `fd4e0ab9b99665ad29a1a95042b7a97a6e498f45` under
 `Benchmarks/StaticCostStudy/results/publication-candidate-20260829/`. That squashed
 commit is the snapshot selected for tagging and persistent archival.
+
+## Supplied-variable CaseForest comparison (2026-09-13)
+
+This is the historical forest-port measurement, before the later symbolic
+parent-transfer alignment fix. See the
+[subsequent alignment and profiling report](exact-case-alignment-and-profiling.md)
+for measurements of the corrected build. Do not treat this section's after binary as
+the final aligned engine.
+
+This comparison ports Lean's `ExactCases.CaseForest` from model revision
+`4102b52fef79782145ffef7401c393319edc4f16`. Supplied-variable requests now resolve
+all active branches together for each compatibility region, preserve field occurrence
+order, and join completed region summaries in the model's right-associated order.
+Variable-independent ExactCase and Syntactic retain their existing algorithms.
+
+### Reproduction and measurement conditions
+
+- Before: repository revision `ca85a645cf4e08c91f76a7bddd83d65990c0bef4`, with engine
+  source clean. The only build prerequisite was correcting the benchmark lockfile's
+  local package entry from stale `0.2.0` to the already-released `0.2.1`.
+- After: the same revision plus the uncommitted CaseForest port and regression tests.
+  The archived engine patch has SHA-256
+  `8437a6046461036fb0c32da5f9afc43055810da629bb35943cee67d8f5a903eb`.
+- Rust `1.95.0 (59807616e 2026-04-14)`, Cargo `1.95.0 (f2d3ce0bd 2026-03-21)`,
+  LLVM 22.1.2; Apple M3 MacBook Air, 8 cores (4 performance, 4 efficiency), 16 GB;
+  macOS 26.6.2 (25G83), on mains power.
+- Both binaries were built using `cargo build --release --locked --offline` from
+  `benchmarks/`, with identical dependencies and benchmark source. Compilation,
+  tests, coverage, and fuzzing finished before the recorded timing campaign.
+- Each axis ran in three fresh processes per variant, serially in alternating
+  before/after order. The existing two warm-ups, at-least-100-ms calibration, five
+  samples, generated inputs, four mode/variable configurations, response assertions,
+  and reusable-estimator timing boundary were preserved.
+- Each reported point is the median of the three process medians. Scaling exponents
+  are OLS fits of log(time) against log(size) across all ten points on each primary
+  axis. The preliminary smoke timings are excluded.
+
+Raw per-process CSVs, the two binaries, original source archive, engine patch,
+SHA-256 manifest, toolchain/host details, and process timestamps are retained locally
+under `.scratch/exact-case-forest/`. The saved `compare.py` runs the binaries directly;
+`summarize.py` produces pointwise medians in `comparison.csv` and fitted exponents in
+`summary.txt`. These transient artifacts remain outside Git.
+
+### Primary response-size results
+
+All times below are microseconds per estimate. Arrows show before → after.
+
+| Axis | Backend | Variables | Small endpoint (µs) | Large endpoint (µs) | Scaling `p` |
+| --- | --- | --- | ---: | ---: | ---: |
+| Schema, 1,024→10,240 types | ExactCase | absent | 68.99 → 67.52 | 720.93 → 377.20 | 1.028 → 0.762 |
+| Schema, 1,024→10,240 types | ExactCase | supplied | 18.42 → 17.86 | 118.20 → 110.99 | 0.815 → 0.796 |
+| Schema, 1,024→10,240 types | Syntactic | absent | 38.14 → 37.47 | 256.78 → 253.45 | 0.842 → 0.840 |
+| Schema, 1,024→10,240 types | Syntactic | supplied | 19.07 → 18.84 | 129.91 → 129.24 | 0.845 → 0.844 |
+| Query, 8→80 spreads | ExactCase | absent | 69.49 → 67.42 | 679.05 → 663.74 | 0.996 → 0.998 |
+| Query, 8→80 spreads | ExactCase | supplied | 18.63 → 17.81 | 161.75 → 161.34 | 0.939 → 0.957 |
+| Query, 8→80 spreads | Syntactic | absent | 38.02 → 37.73 | 359.82 → 357.60 | 0.976 → 0.977 |
+| Query, 8→80 spreads | Syntactic | supplied | 19.14 → 18.86 | 176.74 → 175.50 | 0.961 → 0.966 |
+
+For supplied-variable ExactCase, schema-size timings fall by 3.0% at 1,024 types
+and 6.1% at 10,240 types; the median time reduction across all ten schema points
+is 7.1%. Query-size timings fall by 4.4% at 8 spreads and 0.3% at 80 spreads;
+the median reduction across that axis is 1.2%. The large-query change is too
+small to call an improvement given the shifts in the unchanged controls.
+
+The symbolic schema-size path also becomes substantially faster in these binaries,
+although its traversal source is unchanged. This experiment does not isolate the
+cause of that effect, so it should not be attributed to the supplied-variable
+scheduler. Syntactic control medians shift by roughly 1–2% on the schema axis
+and less than 1% on the query axis. These are whole-binary measurements on this
+host and corpus, not isolated scheduler timings or worst-case complexity bounds.
+
+### Boolean stress and IBM cost
+
+The Boolean stress corpus retains two disjoint regions with `K = 1..6` independent
+variables per region. All four configurations returned `K + 1` as expected.
+
+| Backend | Variables | `K = 1` (µs), before → after | `K = 6` (µs), before → after |
+| --- | --- | ---: | ---: |
+| ExactCase | absent | 5.51 → 5.41 | 139.13 → 137.09 |
+| ExactCase | supplied | 4.10 → 4.05 | 12.43 → 12.58 |
+| Syntactic | absent | 4.21 → 4.06 | 13.00 → 13.13 |
+| Syntactic | supplied | 4.06 → 3.99 | 12.91 → 12.99 |
+
+Supplied-variable ExactCase is 1.2% slower at `K = 6` and 1.1% faster at `K = 1`;
+its median change across the six points is 1.0% slower. This is broadly neutral
+at the observed control variation, rather than a Boolean-stress speedup.
+
+The supplementary IBM-cost endpoints use supplied variables and the same reusable
+estimator boundary. Every type/field-cost assertion passed.
+
+| Types | Spreads | Backend | Before (µs) | After (µs) | Time reduction |
+| ---: | ---: | --- | ---: | ---: | ---: |
+| 1024 | 8 | ExactCase | 25.95 | 24.40 | 6.0% |
+| 1024 | 8 | Syntactic | 29.11 | 28.10 | 3.5% |
+| 10240 | 8 | ExactCase | 191.20 | 181.15 | 5.3% |
+| 10240 | 8 | Syntactic | 231.99 | 230.15 | 0.8% |
+| 1024 | 80 | ExactCase | 211.72 | 209.80 | 0.9% |
+| 1024 | 80 | Syntactic | 262.41 | 254.67 | 3.0% |
+
+The port gives a modest supplied-variable improvement for this schema-size workload;
+it does not establish a general speedup for large queries or independent Boolean
+supports. All 24 timed processes completed, covering 660 measured configurations
+with the original result assertions. The differential model check, both Rust
+toolchains, fuzz campaigns, mutation sentinel, and engine coverage gate also
+passed; see [the alignment record](fuzzing.md#current-alignment-status).

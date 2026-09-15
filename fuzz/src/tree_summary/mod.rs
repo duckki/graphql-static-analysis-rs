@@ -3,6 +3,7 @@
 mod input;
 mod observation;
 mod operation;
+mod schedule;
 
 pub use input::TreeSummaryInput;
 pub use input::LEAN_MODEL_COMMIT;
